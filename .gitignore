@@ -1,0 +1,23 @@
+# Secrets and environment
+.env
+.env.local
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Docker & Database local storage
+postgres_data/
+
+# Large scientific data files
+data/weather/*.nc
+data/weather/*.grb
+data/ais/*.csv
+
+# OS metadata
+.DS_Store
+Thumbs.db
