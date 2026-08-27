@@ -1,23 +1,61 @@
-# Secrets and environment
-.env
-.env.local
+# =========================
+# Python
+# =========================
 
-# Python cache & virtual environments
 __pycache__/
 *.py[cod]
-*$py.class
+*.pyo
+*.pyd
+
+# Virtual environment
 .venv/
 venv/
 env/
 
-# Docker & Database local storage
-postgres_data/
+# =========================
+# Environment / Secrets
+# =========================
 
-# Large scientific data files
-data/weather/*.nc
-data/weather/*.grb
-data/ais/*.csv
+.env
 
-# OS metadata
+# =========================
+# IDE / Editor
+# =========================
+
+.vscode/
+.idea/
+
+# =========================
+# OS
+# =========================
+
 .DS_Store
 Thumbs.db
+
+# =========================
+# Logs
+# =========================
+
+*.log
+
+# =========================
+# Local data
+# =========================
+
+# Raw datasets are large and should not be committed
+data/ais/raw/
+data/weather/
+data/ml/
+
+# Processed/generated datasets
+data/ais/processed/
+
+# =========================
+# Python tooling
+# =========================
+
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
