@@ -15,7 +15,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Close the database connection pool when the application shuts down
+    # Close the
+    #  database connection pool when the application shuts down
     await engine.dispose()
 
 
