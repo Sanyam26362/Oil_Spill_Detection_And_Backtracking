@@ -1,7 +1,7 @@
-# app/models/db_models.py
+# app/models/spill.py
 from sqlalchemy import Column, String, Float, DateTime
 from geoalchemy2 import Geometry
-from app.database import Base
+from app.core.database import Base
 
 class OilSpill(Base):
     __tablename__ = "oil_spills"

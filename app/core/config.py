@@ -9,15 +9,15 @@ class Settings(BaseSettings):
     # Database Settings
     POSTGRES_USER: str
     POSTGRES_PASSWORD: str
-    POSTGRES_SERVER: str
+    POSTGRES_HOST: str
     POSTGRES_PORT: int
     POSTGRES_DB: str
     
     @property
     def async_database_url(self) -> str:
         # Note the use of postgresql+asyncpg for async SQLAlchemy 2.0
-        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        return f"postgresql+asyncpg://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
 
-    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=True, extra="ignore")
 
 settings = Settings()
