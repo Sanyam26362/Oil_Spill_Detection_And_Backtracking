@@ -1,0 +1,23 @@
+{
+  "scenario_id": "scenario-001",
+  "synthetic": true,
+  "spill": {
+    "latitude": 33.5,
+    "longitude": 34.0,
+    "timestamp": "2019-07-15T12:00:00Z"
+  },
+  "ground_truth_suspicious_vessel": "SYNTH-000011",
+  "candidate_vessels": [
+    "SYNTH-000011",
+    "SYNTH-000012",
+    "SYNTH-000013",
+    "SYNTH-000014",
+    "SYNTH-000015"
+  ],
+  "expected_behavior": {
+    "approach": true,
+    "slowdown_near_origin": true,
+    "loiter_near_origin": true,
+    "departure_after_event": true
+  }
+}
