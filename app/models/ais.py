@@ -1,8 +1,19 @@
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, Float, ForeignKey, Index, Integer, String
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import (
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+)
+from sqlalchemy.orm import (
+    Mapped,
+    mapped_column,
+    relationship,
+)
 
 from app.core.database import Base
 
@@ -25,8 +36,6 @@ class Vessel(Base):
         nullable=True,
     )
 
-    # Human-readable broad vessel category.
-    # Example: Cargo, Tanker, Fishing, Passenger.
     shiptype_name: Mapped[str | None] = mapped_column(
         String(100),
         nullable=True,
@@ -97,11 +106,14 @@ class AISPosition(Base):
         nullable=False,
     )
 
-    # False = real source data
-    # True  = generated/synthetic data
     is_synthetic: Mapped[bool] = mapped_column(
         default=False,
         nullable=False,
+    )
+    scenario_id: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
     )
 
     vessel: Mapped["Vessel"] = relationship(
