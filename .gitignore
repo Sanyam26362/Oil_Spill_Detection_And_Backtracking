@@ -7,7 +7,7 @@ __pycache__/
 *.pyo
 *.pyd
 
-# Virtual environment
+# Virtual environments
 .venv/
 venv/
 env/
@@ -17,6 +17,8 @@ env/
 # =========================
 
 .env
+.env.*
+!.env.example
 
 # =========================
 # IDE / Editor
@@ -39,19 +41,7 @@ Thumbs.db
 *.log
 
 # =========================
-# Local data
-# =========================
-
-# Raw datasets are large and should not be committed
-data/ais/raw/
-data/weather/raw/
-data/ocean/raw/
-
-# Large archives
-*.zip
-
-# =========================
-# Python tooling
+# Python tooling / caches
 # =========================
 
 .pytest_cache/
@@ -59,3 +49,63 @@ data/ocean/raw/
 .ruff_cache/
 .coverage
 htmlcov/
+
+# =========================
+# Raw / large datasets
+# =========================
+
+# Raw AIS data
+data/ais/raw/
+
+# Raw weather data
+data/weather/raw/
+
+# Raw ocean/current data
+data/ocean/raw/
+
+# Large archives
+*.zip
+
+# =========================
+# Generated benchmark datasets
+# =========================
+
+# Individual benchmark AIS datasets
+data/ais/processed/BM-*.csv
+
+# Individual benchmark ground-truth files
+data/ais/processed/BM-*_gt.json
+
+# Individual benchmark observation files
+data/ais/processed/BM-*_obs.json
+
+# =========================
+# Generated synthetic datasets
+# =========================
+
+# Scenario-generated AIS CSVs
+data/ais/processed/synthetic_scenario_*.csv
+
+# =========================
+# Local/generated database files
+# =========================
+
+*.db
+*.sqlite
+*.sqlite3
+
+# =========================
+# Keep important benchmark evidence
+# =========================
+
+!data/ais/processed/benchmark_results.csv
+!data/ais/processed/benchmark_summary.json
+!data/ais/processed/synthetic_scenario_002_observation.json
+!data/ais/processed/synthetic_scenario_002_ground_truth.json
+
+# =========================
+# Keep documentation
+# =========================
+
+!docs/
+!docs/**/*.md
