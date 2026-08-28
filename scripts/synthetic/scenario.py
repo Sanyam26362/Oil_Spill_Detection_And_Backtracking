@@ -1,24 +1,96 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 
 @dataclass
-class SpillScenario:
+class SyntheticScenarioConfig:
+    """
+    Configuration for one synthetic oil-spill attribution experiment.
+
+    The configuration contains both:
+    - the physical oil-release event
+    - the AIS traffic-generation parameters
+
+    Ground truth is used only by the evaluation layer.
+    """
+
     scenario_id: str
 
-    origin_lat: float
-    origin_lon: float
+    # ==============================================================
+    # TRUE OIL RELEASE
+    # ==============================================================
 
-    origin_time: datetime
+    release_lat: float
+    release_lon: float
+    release_time: datetime
 
-    region_min_lat: float
-    region_max_lat: float
-    region_min_lon: float
-    region_max_lon: float
+    # ==============================================================
+    # SYNTHETIC SAR OBSERVATION
+    # ==============================================================
 
-    duration_hours: int = 24
+    observation_lat: float
+    observation_lon: float
+    observation_time: datetime
 
-    background_vessels: int = 150
-    candidate_vessels: int = 5
+    drift_duration_hours: float
 
-    suspicious_vessel_index: int = 0
+    # ==============================================================
+    # AIS GENERATION REGION
+    # ==============================================================
+
+    bounds_lat_min: float
+    bounds_lat_max: float
+
+    bounds_lon_min: float
+    bounds_lon_max: float
+
+    # ==============================================================
+    # FLEET
+    # ==============================================================
+
+    num_background_vessels: int = 150
+
+    num_decoy_vessels: int = 8
+
+    # Globally unique vessel ID prefix per scenario.
+    # Example: "SYNTH-S001-" produces "SYNTH-S001-SRC", "SYNTH-S001-BKG0001"
+    vessel_id_prefix: str = "SYNTH-"
+
+    # Source vessel keeps the existing naming convention by default.
+    source_vessel_id: str = "SYNTH-000011"
+
+    decoy_start_id: int = 12
+
+    # ==============================================================
+    # SOURCE-VESSEL BEHAVIOR
+    # ==============================================================
+
+    approach_start_distance_km: float = 30.0
+
+    approach_duration_hours: float = 2.0
+
+    slowdown_duration_minutes: int = 40
+
+    loiter_duration_minutes: int = 30
+
+    departure_duration_hours: float = 3.0
+
+    approach_speed_knots: float = 10.0
+
+    slowdown_speed_knots: float = 2.5
+
+    release_speed_knots: float = 0.8
+
+    departure_speed_knots: float = 11.0
+
+    # ==============================================================
+    # OIL MODEL
+    # ==============================================================
+
+    windage: float = 0.03
+
+    # ==============================================================
+    # RANDOMNESS
+    # ==============================================================
+
+    seed: int = 42
