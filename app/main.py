@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.routers import spills
+from app.routers import spills, drift, attribution
 from app.models.ais import AISPosition, Vessel
 from app.models.spill import OilSpill
 
@@ -31,6 +31,18 @@ app.include_router(
     spills.router,
     prefix=f"{settings.API_V1_STR}/spills",
     tags=["ML Pipeline Ingestion"],
+)
+
+app.include_router(
+    drift.router,
+    prefix=f"{settings.API_V1_STR}/drift",
+    tags=["Drift Modeling"],
+)
+
+app.include_router(
+    attribution.router,
+    prefix=f"{settings.API_V1_STR}/attribution",
+    tags=["Attribution"],
 )
 
 
