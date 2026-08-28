@@ -44,11 +44,11 @@ Thumbs.db
 
 # Raw datasets are large and should not be committed
 data/ais/raw/
-data/weather/
-data/ml/
+data/weather/raw/
+data/ocean/raw/
 
-# Processed/generated datasets
-data/ais/processed/
+# Large archives
+*.zip
 
 # =========================
 # Python tooling
