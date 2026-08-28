@@ -1,388 +1,257 @@
-import argparse
-import csv
-import math
-from collections import defaultdict
-from datetime import datetime, timezone
+from __future__ import annotations
+
+import json
+from datetime import timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from app.services.drift_engine import DriftEngine
+from app.services.hindcast_service import HindcastService
+from app.services.scoring_engine import ScoringEngine
+from app.services.weather_service import WeatherService
 
 
-EARTH_RADIUS_KM = 6371.0088
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+DATA_DIR = (
+    PROJECT_ROOT
+    / "data/ais/processed"
+)
+
+ERA5_PATH = (
+    PROJECT_ROOT
+    / "data/weather/raw/era5_wind_2019-07-event.nc"
+)
+
+CMEMS_PATH = (
+    PROJECT_ROOT
+    / "data/ocean/raw/med_currents_2019-07-event.nc"
+)
 
 
-def haversine_km(lat1, lon1, lat2, lon2):
-    lat1, lon1, lat2, lon2 = map(
-        math.radians,
-        [lat1, lon1, lat2, lon2],
+def load_observation() -> dict:
+    """
+    Load ONLY the synthetic SAR observation.
+
+    Ground truth is intentionally not loaded.
+    """
+
+    path = (
+        DATA_DIR
+        / "synthetic_scenario_002_observation.json"
     )
 
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
+    with path.open(
+        "r",
+        encoding="utf-8",
+    ) as f:
+        payload = json.load(f)
 
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(lat1)
-        * math.cos(lat2)
-        * math.sin(dlon / 2) ** 2
+    return payload["observation"]
+
+
+def load_ais_fixture() -> pd.DataFrame:
+
+    path = (
+        DATA_DIR
+        / "synthetic_scenario_002.csv"
     )
 
-    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+    df = pd.read_csv(path)
 
-
-def parse_time(value):
-    dt = datetime.fromisoformat(
-        value.replace("Z", "+00:00")
+    df["timestamp"] = pd.to_datetime(
+        df["timestamp"],
+        utc=True,
     )
 
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-
-    return dt
+    return df
 
 
-def load_ais(path):
-    vessels = defaultdict(list)
+def main() -> None:
 
-    with open(path, encoding="utf-8", newline="") as f:
-        reader = csv.DictReader(f)
+    observation = load_observation()
 
-        for row in reader:
-            row["latitude"] = float(row["latitude"])
-            row["longitude"] = float(row["longitude"])
-            row["speed"] = float(row["speed"])
-            row["timestamp"] = parse_time(row["timestamp"])
+    obs_time = pd.Timestamp(
+        observation["timestamp"]
+    )
 
-            vessels[row["vessel_id"]].append(row)
+    df = load_ais_fixture()
 
-    for vessel_id in vessels:
-        vessels[vessel_id].sort(
-            key=lambda x: x["timestamp"]
+    with WeatherService(
+        era5_path=ERA5_PATH,
+        cmems_path=CMEMS_PATH,
+    ) as weather:
+
+        drift_engine = DriftEngine(
+            weather_service=weather,
+            windage=0.03,
         )
 
-    return vessels
-
-
-def distance_from_spill(row, spill_lat, spill_lon):
-    return haversine_km(
-        row["latitude"],
-        row["longitude"],
-        spill_lat,
-        spill_lon,
-    )
-
-
-def average_speed(rows):
-    if not rows:
-        return 0.0
-
-    return sum(r["speed"] for r in rows) / len(rows)
-
-
-def analyze_vessel(rows, spill_lat, spill_lon, spill_time):
-    distances = [
-        distance_from_spill(
-            r,
-            spill_lat,
-            spill_lon,
-        )
-        for r in rows
-    ]
-
-    min_distance = min(distances)
-
-    closest_index = distances.index(min_distance)
-    closest_row = rows[closest_index]
-
-    closest_time = closest_row["timestamp"]
-
-    time_difference_sec = abs(
-        (closest_time - spill_time).total_seconds()
-    )
-
-    # ---------------------------------------------------------
-    # TIME WINDOWS
-    # ---------------------------------------------------------
-
-    before_60 = [
-        r for r in rows
-        if -3600
-        <= (r["timestamp"] - spill_time).total_seconds()
-        < 0
-    ]
-
-    before_30 = [
-        r for r in rows
-        if -1800
-        <= (r["timestamp"] - spill_time).total_seconds()
-        < 0
-    ]
-
-    event_window = [
-        r for r in rows
-        if 0
-        <= (r["timestamp"] - spill_time).total_seconds()
-        <= 1800
-        and distance_from_spill(
-            r,
-            spill_lat,
-            spill_lon,
-        ) <= 5
-    ]
-
-    before_event_near = [
-        r for r in rows
-        if -1800
-        <= (r["timestamp"] - spill_time).total_seconds()
-        < 0
-        and distance_from_spill(
-            r,
-            spill_lat,
-            spill_lon,
-        ) <= 5
-    ]
-
-    after_30 = [
-        r for r in rows
-        if 1800
-        < (r["timestamp"] - spill_time).total_seconds()
-        <= 3600
-    ]
-
-    # ---------------------------------------------------------
-    # SPEED
-    # ---------------------------------------------------------
-
-    pre_speed = average_speed(before_60)
-
-    pre_event_speed = average_speed(before_event_near)
-
-    event_speed = average_speed(event_window)
-
-    post_speed = average_speed(after_30)
-
-    # ---------------------------------------------------------
-    # SPEED REDUCTION
-    # ---------------------------------------------------------
-
-    if pre_event_speed > 0:
-        slowdown_ratio = (
-            pre_event_speed - event_speed
-        ) / pre_event_speed
-
-        slowdown_ratio = max(
-            0.0,
-            min(1.0, slowdown_ratio),
-        )
-    else:
-        slowdown_ratio = 0.0
-
-    # ---------------------------------------------------------
-    # LOITERING
-    # ---------------------------------------------------------
-
-    loiter_minutes = (
-        len(event_window) * 10 / 60
-    )
-
-    # ---------------------------------------------------------
-    # APPROACH BEHAVIOR
-    # ---------------------------------------------------------
-
-    approach_score = 0.0
-
-    if before_event_near:
-        earliest_distance = distance_from_spill(
-            before_event_near[0],
-            spill_lat,
-            spill_lon,
-        )
-
-        latest_distance = distance_from_spill(
-            before_event_near[-1],
-            spill_lat,
-            spill_lon,
-        )
-
-        if earliest_distance > latest_distance:
-            approach_score = 1.0
-
-    # ---------------------------------------------------------
-    # DEPARTURE
-    # ---------------------------------------------------------
-
-    departure_score = 0.0
-
-    if after_30:
-        post_distances = [
-            distance_from_spill(
-                r,
-                spill_lat,
-                spill_lon,
+        hindcast_service = (
+            HindcastService(
+                drift_engine=drift_engine
             )
-            for r in after_30
-        ]
+        )
 
-        if post_distances[-1] > post_distances[0]:
-            departure_score = 1.0
+        estimate = (
+            hindcast_service.backward_ensemble(
+                obs_latitude=observation["latitude"],
+                obs_longitude=observation["longitude"],
+                obs_time=obs_time.to_pydatetime(),
+                duration_hours=6,
+                ensemble_size=100,
+                initial_radius_m=500,
+                timestep_minutes=15,
+                random_seed=42,
+            )
+        )
 
-    # ---------------------------------------------------------
-    # TEMPORAL SCORE
-    # ---------------------------------------------------------
+    # ==============================================================
+    # Candidate extraction for offline synthetic fixture.
+    #
+    # Production candidate extraction should use AISRepository +
+    # PostGIS instead.
+    # ==============================================================
 
-    temporal_score = max(
-        0.0,
-        1.0 - time_difference_sec / 7200,
+    estimated_release_time = (
+        obs_time
+        - timedelta(hours=6)
     )
 
-    # ---------------------------------------------------------
-    # PROXIMITY SCORE
-    # ---------------------------------------------------------
-
-    proximity_score = max(
-        0.0,
-        1.0 - min_distance / 10,
+    search_radius_km = max(
+        estimate.radius_km + 5.0,
+        5.0,
     )
 
-    # ---------------------------------------------------------
-    # LOITER SCORE
-    # ---------------------------------------------------------
-
-    loiter_score = min(
-        1.0,
-        loiter_minutes / 30,
+    time_start = (
+        estimated_release_time
+        - timedelta(hours=2)
     )
 
-    # ---------------------------------------------------------
-    # COMBINED SCORE
-    # ---------------------------------------------------------
-
-    score = (
-        proximity_score * 0.25
-        + temporal_score * 0.10
-        + slowdown_ratio * 0.25
-        + loiter_score * 0.20
-        + approach_score * 0.10
-        + departure_score * 0.10
+    time_end = (
+        estimated_release_time
+        + timedelta(hours=2)
     )
 
-    if min_distance > 10:
-        score = 0.0
+    candidate_ids = []
 
-    return {
-        "min_distance_km": min_distance,
-        "time_difference_sec": time_difference_sec,
-        "pre_speed": pre_speed,
-        "pre_event_speed": pre_event_speed,
-        "event_speed": event_speed,
-        "post_speed": post_speed,
-        "slowdown_ratio": slowdown_ratio,
-        "loiter_minutes": loiter_minutes,
-        "approach_score": approach_score,
-        "departure_score": departure_score,
-        "score": score,
-    }
+    for vessel_id, vessel_df in df.groupby(
+        "vessel_id"
+    ):
 
+        vessel_df = vessel_df[
+            (
+                vessel_df["timestamp"]
+                >= time_start
+            )
+            &
+            (
+                vessel_df["timestamp"]
+                <= time_end
+            )
+        ].copy()
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Score AIS vessels for oil-spill attribution."
+        if vessel_df.empty:
+            continue
+
+        for _, row in vessel_df.iterrows():
+
+            distance = (
+                HindcastService.haversine_km(
+                    estimate.centroid_latitude,
+                    estimate.centroid_longitude,
+                    row["latitude"],
+                    row["longitude"],
+                )
+            )
+
+            if distance <= search_radius_km:
+                candidate_ids.append(
+                    vessel_id
+                )
+                break
+
+    candidate_ids = sorted(
+        set(candidate_ids)
     )
 
-    parser.add_argument(
-        "--file",
-        required=True,
-    )
+    # ==============================================================
+    # Score
+    # ==============================================================
 
-    parser.add_argument(
-        "--spill-lat",
-        type=float,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--spill-lon",
-        type=float,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--spill-time",
-        required=True,
-    )
-
-    args = parser.parse_args()
-
-    spill_time = parse_time(args.spill_time)
-
-    vessels = load_ais(args.file)
+    scorer = ScoringEngine()
 
     results = []
 
-    for vessel_id, rows in vessels.items():
+    for vessel_id in candidate_ids:
 
-        features = analyze_vessel(
-            rows,
-            args.spill_lat,
-            args.spill_lon,
-            spill_time,
+        score = scorer.score_vessel(
+            vessel_id=vessel_id,
+            df=df,
+            source_latitude=(
+                estimate.centroid_latitude
+            ),
+            source_longitude=(
+                estimate.centroid_longitude
+            ),
+            estimated_release_time=(
+                estimated_release_time
+            ),
         )
 
-        results.append({
-            "vessel_id": vessel_id,
-            **features,
-        })
+        results.append(
+            score.__dict__
+        )
 
-    results.sort(
-        key=lambda x: x["score"],
-        reverse=True,
+    results_df = (
+        pd.DataFrame(results)
+        .sort_values(
+            "total_score",
+            ascending=False,
+        )
+        .reset_index(drop=True)
     )
 
     print()
-    print("=" * 110)
-    print("              AIS VESSEL ATTRIBUTION RESULTS")
-    print("=" * 110)
+    print("=" * 100)
+    print("BLIND ATTRIBUTION RESULT")
+    print("=" * 100)
 
     print(
-        f"Spill location: "
-        f"{args.spill_lat}, {args.spill_lon}"
+        f"Estimated source : "
+        f"{estimate.centroid_latitude:.6f}, "
+        f"{estimate.centroid_longitude:.6f}"
     )
 
-    print(f"Spill time: {args.spill_time}")
+    print(
+        f"Source radius    : "
+        f"{estimate.radius_km:.3f} km"
+    )
+
+    print(
+        f"Candidates       : "
+        f"{len(candidate_ids)}"
+    )
+
+    print()
+
+    if results_df.empty:
+        print("No candidates found.")
+        return
+
+    print(
+        results_df.to_string(
+            index=False
+        )
+    )
+
     print()
 
     print(
-        f"{'Rank':<6}"
-        f"{'Vessel':<18}"
-        f"{'Score':<9}"
-        f"{'Min km':<9}"
-        f"{'Time min':<10}"
-        f"{'Pre kn':<9}"
-        f"{'Event kn':<10}"
-        f"{'Slowdown':<10}"
-        f"{'Loiter':<9}"
-        f"{'Approach':<10}"
-        f"{'Depart':<8}"
+        f"TOP PREDICTION: "
+        f"{results_df.iloc[0]['vessel_id']}"
     )
-
-    print("-" * 110)
-
-    for rank, result in enumerate(
-        results[:10],
-        1,
-    ):
-        print(
-            f"{rank:<6}"
-            f"{result['vessel_id']:<18}"
-            f"{result['score']:<9.3f}"
-            f"{result['min_distance_km']:<9.3f}"
-            f"{result['time_difference_sec'] / 60:<10.1f}"
-            f"{result['pre_event_speed']:<9.2f}"
-            f"{result['event_speed']:<10.2f}"
-            f"{result['slowdown_ratio']:<10.2f}"
-            f"{result['loiter_minutes']:<9.1f}"
-            f"{result['approach_score']:<10.2f}"
-            f"{result['departure_score']:<8.2f}"
-        )
-
-    print("=" * 110)
 
 
 if __name__ == "__main__":
