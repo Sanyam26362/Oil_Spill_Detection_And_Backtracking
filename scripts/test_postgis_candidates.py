@@ -71,6 +71,7 @@ async def main() -> None:
                 start_time=start_time.to_pydatetime(),
                 end_time=end_time.to_pydatetime(),
                 synthetic_only=True,
+                scenario_id="scenario-002",
             )
         )
 
