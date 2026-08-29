@@ -185,6 +185,80 @@ class WeatherService:
             current_v=current_v,
         )
 
+    def get_velocities(
+        self,
+        latitudes: list[float] | np.ndarray,
+        longitudes: list[float] | np.ndarray,
+        timestamp: datetime,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Return linearly interpolated environmental velocity for multiple
+        points at a single UTC timestamp.
+
+        Returns:
+            wind_u, wind_v, current_u, current_v (as numpy arrays)
+        """
+        lats = np.asarray(latitudes, dtype=float)
+        lons = np.asarray(longitudes, dtype=float)
+
+        if not np.all((lats >= -90.0) & (lats <= 90.0)):
+            raise ValueError("Invalid latitude found in batch.")
+
+        timestamp_naive = self._to_naive_utc(timestamp)
+
+        # ----------------------------------------------------------
+        # Normalize longitudes
+        # ----------------------------------------------------------
+        era5_longitudes = self.era5[self.era5_lon].values
+        cmems_longitudes = self.cmems[self.cmems_lon].values
+
+        era5_lons = np.array([
+            self._normalize_longitude(lon, era5_longitudes)
+            for lon in lons
+        ])
+
+        cmems_lons = np.array([
+            self._normalize_longitude(lon, cmems_longitudes)
+            for lon in lons
+        ])
+
+        # ----------------------------------------------------------
+        # ERA5 interpolation (Vectorized)
+        # ----------------------------------------------------------
+        lats_da = xr.DataArray(lats, dims="points")
+        era5_lons_da = xr.DataArray(era5_lons, dims="points")
+
+        era5_points = self.era5.interp(
+            {
+                self.era5_lat: lats_da,
+                self.era5_lon: era5_lons_da,
+                self.era5_time: timestamp_naive,
+            },
+            method="linear",
+        )
+
+        wind_u = era5_points[self.era5_u].values
+        wind_v = era5_points[self.era5_v].values
+
+        # ----------------------------------------------------------
+        # CMEMS interpolation (Vectorized)
+        # ----------------------------------------------------------
+        cmems_lons_da = xr.DataArray(cmems_lons, dims="points")
+
+        cmems_points = self.cmems.interp(
+            {
+                self.cmems_lat: lats_da,
+                self.cmems_lon: cmems_lons_da,
+                self.cmems_time: timestamp_naive,
+            },
+            method="linear",
+        )
+
+        current_u = cmems_points[self.cmems_u].values
+        current_v = cmems_points[self.cmems_v].values
+
+        return wind_u, wind_v, current_u, current_v
+
     @staticmethod
     def _normalize_longitude(
         longitude: float,

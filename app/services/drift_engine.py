@@ -86,6 +86,39 @@ class DriftEngine:
             longitude + delta_lon,
         )
 
+    @staticmethod
+    def move_particles(
+        latitudes: np.ndarray,
+        longitudes: np.ndarray,
+        u: np.ndarray,
+        v: np.ndarray,
+        seconds: float,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Move multiple particles using horizontal velocity in m/s.
+        """
+        north_distance = v * seconds
+        east_distance = u * seconds
+
+        delta_lat = np.degrees(north_distance / EARTH_RADIUS_M)
+
+        latitude_rad = np.radians(latitudes)
+        cos_lat = np.cos(latitude_rad)
+
+        if np.any(np.abs(cos_lat) < 1e-12):
+            raise ValueError(
+                "Longitude calculation is unstable near the poles."
+            )
+
+        delta_lon = np.degrees(
+            east_distance / (EARTH_RADIUS_M * cos_lat)
+        )
+
+        return (
+            latitudes + delta_lat,
+            longitudes + delta_lon,
+        )
+
     def _track(
         self,
         start_latitude: float,
@@ -272,6 +305,131 @@ class DriftEngine:
 
         return DriftTrajectory(states=states)
 
+    def _track_ensemble(
+        self,
+        start_latitudes: np.ndarray | list[float],
+        start_longitudes: np.ndarray | list[float],
+        start_time: datetime,
+        duration_hours: float,
+        timestep_minutes: int,
+        direction: str,
+    ) -> list[DriftTrajectory]:
+
+        if duration_hours <= 0:
+            raise ValueError("duration_hours must be greater than 0.")
+        if timestep_minutes <= 0:
+            raise ValueError("timestep_minutes must be greater than 0.")
+        if direction not in {"forward", "backward"}:
+            raise ValueError("direction must be 'forward' or 'backward'.")
+
+        time_multiplier = 1 if direction == "forward" else -1
+        timestep_seconds = timestep_minutes * 60 * time_multiplier
+        number_of_steps = int(duration_hours * 3600 / abs(timestep_seconds))
+
+        lats = np.asarray(start_latitudes, dtype=float)
+        lons = np.asarray(start_longitudes, dtype=float)
+        num_particles = len(lats)
+
+        active = np.ones(num_particles, dtype=bool)
+        history: list[list[ParticleState]] = [[] for _ in range(num_particles)]
+        timestamp = start_time
+
+        wind_u, wind_v, curr_u, curr_v = self.weather_service.get_velocities(
+            latitudes=lats,
+            longitudes=lons,
+            timestamp=timestamp,
+        )
+
+        valid_idx = ~np.isnan(wind_u) & ~np.isnan(wind_v) & ~np.isnan(curr_u) & ~np.isnan(curr_v)
+
+        for idx in np.where(~valid_idx)[0]:
+            active[idx] = False
+            logger.warning(
+                "Tracking could not start for particle %d: "
+                "environmental data unavailable at lat=%f lon=%f time=%s",
+                idx, lats[idx], lons[idx], timestamp
+            )
+
+        drift_u = np.zeros(num_particles)
+        drift_v = np.zeros(num_particles)
+
+        drift_u[valid_idx] = curr_u[valid_idx] + self.windage * wind_u[valid_idx]
+        drift_v[valid_idx] = curr_v[valid_idx] + self.windage * wind_v[valid_idx]
+
+        for idx in np.where(valid_idx)[0]:
+            history[idx].append(
+                ParticleState(
+                    timestamp=timestamp,
+                    latitude=float(lats[idx]),
+                    longitude=float(lons[idx]),
+                    wind_u=float(wind_u[idx]),
+                    wind_v=float(wind_v[idx]),
+                    current_u=float(curr_u[idx]),
+                    current_v=float(curr_v[idx]),
+                    drift_u=float(drift_u[idx]),
+                    drift_v=float(drift_v[idx]),
+                )
+            )
+
+        for step in range(number_of_steps):
+            if not np.any(active):
+                break
+
+            active_idx = np.where(active)[0]
+
+            new_lats, new_lons = self.move_particles(
+                latitudes=lats[active_idx],
+                longitudes=lons[active_idx],
+                u=drift_u[active_idx],
+                v=drift_v[active_idx],
+                seconds=timestep_seconds,
+            )
+
+            lats[active_idx] = new_lats
+            lons[active_idx] = new_lons
+
+            new_timestamp = timestamp + timedelta(seconds=timestep_seconds)
+            timestamp = new_timestamp
+
+            wind_u_new, wind_v_new, curr_u_new, curr_v_new = self.weather_service.get_velocities(
+                latitudes=lats[active_idx],
+                longitudes=lons[active_idx],
+                timestamp=timestamp,
+            )
+
+            step_valid = ~np.isnan(wind_u_new) & ~np.isnan(wind_v_new) & ~np.isnan(curr_u_new) & ~np.isnan(curr_v_new)
+
+            for i, idx in enumerate(active_idx):
+                if not step_valid[i]:
+                    active[idx] = False
+                    logger.warning(
+                        "Tracking stopped at step %d for particle %d: "
+                        "environmental data unavailable at lat=%f lon=%f time=%s",
+                        step, idx, lats[idx], lons[idx], timestamp
+                    )
+                else:
+                    d_u = curr_u_new[i] + self.windage * wind_u_new[i]
+                    d_v = curr_v_new[i] + self.windage * wind_v_new[i]
+
+                    drift_u[idx] = d_u
+                    drift_v[idx] = d_v
+
+                    history[idx].append(
+                        ParticleState(
+                            timestamp=timestamp,
+                            latitude=float(lats[idx]),
+                            longitude=float(lons[idx]),
+                            wind_u=float(wind_u_new[i]),
+                            wind_v=float(wind_v_new[i]),
+                            current_u=float(curr_u_new[i]),
+                            current_v=float(curr_v_new[i]),
+                            drift_u=float(d_u),
+                            drift_v=float(d_v),
+                        )
+                    )
+
+        return [DriftTrajectory(states=states) for states in history]
+
     def forward_drift(
         self,
         start_latitude: float,
@@ -308,6 +466,46 @@ class DriftEngine:
         return self._track(
             start_latitude=obs_latitude,
             start_longitude=obs_longitude,
+            start_time=obs_time,
+            duration_hours=duration_hours,
+            timestep_minutes=timestep_minutes,
+            direction="backward",
+        )
+
+    def forward_drift_ensemble(
+        self,
+        start_latitudes: np.ndarray | list[float],
+        start_longitudes: np.ndarray | list[float],
+        start_time: datetime,
+        duration_hours: float,
+        timestep_minutes: int = 15,
+    ) -> list[DriftTrajectory]:
+        """
+        Simulate oil movement forward in time for multiple particles.
+        """
+        return self._track_ensemble(
+            start_latitudes=start_latitudes,
+            start_longitudes=start_longitudes,
+            start_time=start_time,
+            duration_hours=duration_hours,
+            timestep_minutes=timestep_minutes,
+            direction="forward",
+        )
+
+    def backward_drift_ensemble(
+        self,
+        obs_latitudes: np.ndarray | list[float],
+        obs_longitudes: np.ndarray | list[float],
+        obs_time: datetime,
+        duration_hours: float,
+        timestep_minutes: int = 15,
+    ) -> list[DriftTrajectory]:
+        """
+        Hindcast backwards for multiple observed slick points.
+        """
+        return self._track_ensemble(
+            start_latitudes=obs_latitudes,
+            start_longitudes=obs_longitudes,
             start_time=obs_time,
             duration_hours=duration_hours,
             timestep_minutes=timestep_minutes,

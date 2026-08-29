@@ -133,39 +133,36 @@ class HindcastService:
 
         particles: list[ParticleSource] = []
 
-        for _ in range(ensemble_size):
+        angles = rng.uniform(
+            0.0,
+            2.0 * np.pi,
+            ensemble_size,
+        )
 
-            # Uniform distribution over the area of a circle.
-            angle = rng.uniform(
-                0.0,
-                2.0 * np.pi,
-            )
+        radii = (
+            initial_radius_m
+            * np.sqrt(rng.random(ensemble_size))
+        )
 
-            radius = (
-                initial_radius_m
-                * np.sqrt(rng.random())
-            )
+        east_m = radii * np.cos(angles)
+        north_m = radii * np.sin(angles)
 
-            east_m = radius * np.cos(angle)
-            north_m = radius * np.sin(angle)
+        particle_latitudes, particle_longitudes = self._offset_position(
+            latitude=obs_latitude,
+            longitude=obs_longitude,
+            east_m=east_m,
+            north_m=north_m,
+        )
 
-            particle_latitude, particle_longitude = (
-                self._offset_position(
-                    latitude=obs_latitude,
-                    longitude=obs_longitude,
-                    east_m=east_m,
-                    north_m=north_m,
-                )
-            )
+        trajectories = self.drift_engine.backward_drift_ensemble(
+            obs_latitudes=particle_latitudes,
+            obs_longitudes=particle_longitudes,
+            obs_time=obs_time,
+            duration_hours=duration_hours,
+            timestep_minutes=timestep_minutes,
+        )
 
-            trajectory = self.drift_engine.backward_drift(
-                obs_latitude=particle_latitude,
-                obs_longitude=particle_longitude,
-                obs_time=obs_time,
-                duration_hours=duration_hours,
-                timestep_minutes=timestep_minutes,
-            )
-
+        for trajectory in trajectories:
             if not trajectory.states:
                 continue
 

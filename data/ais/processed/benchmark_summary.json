@@ -5,13 +5,13 @@
   "top1_accuracy": 1.0,
   "top3_accuracy": 1.0,
   "mrr": 1.0,
-  "mean_source_error_km": 0.3523,
-  "median_source_error_km": 0.3308,
-  "mean_candidate_count": 11.68,
+  "mean_source_error_km": 0.338,
+  "median_source_error_km": 0.3046,
+  "mean_candidate_count": 11.7,
   "median_candidate_count": 12.0,
   "min_candidate_count": 6,
   "max_candidate_count": 16,
-  "mean_score_margin": 0.2463,
+  "mean_score_margin": 0.2472,
   "base_scenarios": {
     "total_scenarios": 20,
     "successful_runs": 20,
@@ -19,13 +19,13 @@
     "top1_accuracy": 1.0,
     "top3_accuracy": 1.0,
     "mrr": 1.0,
-    "mean_source_error_km": 0.3458,
-    "median_source_error_km": 0.3462,
-    "mean_candidate_count": 10.75,
+    "mean_source_error_km": 0.3345,
+    "median_source_error_km": 0.3155,
+    "mean_candidate_count": 10.8,
     "median_candidate_count": 11.0,
     "min_candidate_count": 6,
     "max_candidate_count": 16,
-    "mean_score_margin": 0.2625
+    "mean_score_margin": 0.2629
   },
   "hard_scenarios": {
     "total_scenarios": 20,
@@ -34,12 +34,12 @@
     "top1_accuracy": 1.0,
     "top3_accuracy": 1.0,
     "mrr": 1.0,
-    "mean_source_error_km": 0.3587,
-    "median_source_error_km": 0.3196,
+    "mean_source_error_km": 0.3416,
+    "median_source_error_km": 0.2939,
     "mean_candidate_count": 12.6,
     "median_candidate_count": 13.0,
     "min_candidate_count": 8,
     "max_candidate_count": 16,
-    "mean_score_margin": 0.2302
+    "mean_score_margin": 0.2316
   }
 }
