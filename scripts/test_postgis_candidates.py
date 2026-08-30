@@ -31,6 +31,7 @@ async def main() -> None:
         payload = json.load(f)
 
     observation = payload["observation"]
+    scenario_id = payload.get("scenario_id", "scenario-002")
 
     observation_time = pd.Timestamp(
         observation["timestamp"]
@@ -71,7 +72,7 @@ async def main() -> None:
                 start_time=start_time.to_pydatetime(),
                 end_time=end_time.to_pydatetime(),
                 synthetic_only=True,
-                scenario_id="scenario-002",
+                scenario_id=scenario_id,
             )
         )
 

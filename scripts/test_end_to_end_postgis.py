@@ -43,6 +43,7 @@ async def main() -> None:
         payload = json.load(f)
 
     observation = payload["observation"]
+    scenario_id = payload.get("scenario_id", "scenario-002")
 
     observation_time = (
         pd.Timestamp(
@@ -78,7 +79,7 @@ async def main() -> None:
                 candidate_radius_margin_km=5,
                 candidate_time_window_hours=2,
                 synthetic_only=True,
-                scenario_id="scenario-002",
+                scenario_id=scenario_id,
             )
 
     print()

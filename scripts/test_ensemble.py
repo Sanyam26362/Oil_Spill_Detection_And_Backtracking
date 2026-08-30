@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from app.services.drift_engine import DriftEngine
 from app.services.weather_service import WeatherService
+from app.services.hindcast_service import HindcastService
 
 
 ERA5_FILE = (
@@ -71,7 +72,8 @@ def main() -> None:
         # Backward ensemble
         # ----------------------------------------------------------
 
-        estimate = engine.backward_ensemble(
+        hindcast = HindcastService(drift_engine=engine)
+        estimate = hindcast.backward_ensemble(
             obs_latitude=observation.latitude,
             obs_longitude=observation.longitude,
             obs_time=observation.timestamp,
