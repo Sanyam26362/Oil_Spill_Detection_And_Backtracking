@@ -31,7 +31,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - .:/app
+      - ./data:/app/data:ro
+      - ./json_output:/app/json_output:ro
     depends_on:
       postgres:
         condition: service_healthy

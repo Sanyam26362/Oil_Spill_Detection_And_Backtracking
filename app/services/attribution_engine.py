@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -81,6 +81,41 @@ class AttributionEngine:
         """
 
         # ==========================================================
+        # 0. ELIGIBILITY FILTER
+        # ==========================================================
+        
+        estimated_release_time = (
+            observation_time
+            - timedelta(
+                hours=drift_duration_hours
+            )
+        )
+        
+        search_end = (
+            estimated_release_time
+            + timedelta(
+                hours=candidate_time_window_hours
+            )
+        )
+        
+        # We know synthetic AIS data begins strictly at 2019-01-01
+        ais_start = datetime(2019, 1, 1, tzinfo=timezone.utc)
+        if search_end < ais_start:
+            return {
+                "source_estimate": {
+                    "latitude": observation_latitude,
+                    "longitude": observation_longitude,
+                    "radius_km": 0.0,
+                },
+                "estimated_release_time": (
+                    estimated_release_time.isoformat()
+                ),
+                "candidate_count": 0,
+                "candidates": [],
+                "top_prediction": None,
+            }
+
+        # ==========================================================
         # 1. HINDCAST
         # ==========================================================
 
@@ -97,12 +132,7 @@ class AttributionEngine:
             )
         )
 
-        estimated_release_time = (
-            observation_time
-            - timedelta(
-                hours=drift_duration_hours
-            )
-        )
+
 
         # ==========================================================
         # 2. CANDIDATE SEARCH

@@ -61,3 +61,69 @@ class BacktrackResponse(BaseModel):
     backward_trajectory: List[TrajectoryPoint]
     forward_trajectory: List[TrajectoryPoint]
     candidate_vessels: List[CandidateVessel]
+
+
+# ============================================================
+# DEMO API SCHEMAS
+# ============================================================
+
+class DemoSpillListItem(BaseModel):
+    spill_id: str
+    detected_at: datetime
+    centroid: CentroidSchema
+    area_km2: float
+    confidence_score: float
+    candidate_count: int
+    image_url: Optional[str]
+
+
+class DemoPaginationResponse(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    items: List[DemoSpillListItem]
+
+
+class DemoSpillDetail(BaseModel):
+    spill_id: str
+    source_type: str
+    source_file: str
+    detected_at: datetime
+    estimated_age_hours: float
+    estimated_release_time: datetime
+    observation_latitude: float
+    observation_longitude: float
+    centroid: CentroidSchema
+    polygon: List[List[float]]
+    area_km2: float
+    confidence_score: float
+    image_url: Optional[str]
+    estimated_source_latitude: Optional[float]
+    estimated_source_longitude: Optional[float]
+    estimated_source_radius_km: Optional[float]
+    candidate_count: int
+    ranked_top_vessel: Optional[str]
+    ranked_top_score: Optional[float]
+    runtime_seconds: Optional[float]
+
+
+class DemoSpillVessel(BaseModel):
+    vessel_id: str
+    is_mock: bool
+    rank: int
+    score: Optional[float]
+    vessel_name: Optional[str] = None
+    mmsi: Optional[str] = None
+    imo: Optional[str] = None
+    distance_to_origin_km: Optional[float] = None
+
+
+class DemoSpillVesselResponse(BaseModel):
+    spill_id: str
+    vessels: List[DemoSpillVessel]
+
+
+class DemoBacktrackResponse(BaseModel):
+    spill_id: str
+    backtrack: dict
+    attribution: dict

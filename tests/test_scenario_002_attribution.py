@@ -51,7 +51,7 @@ try:
     # -----------------------------------------------------------------------
     # Environmental lookup
     # -----------------------------------------------------------------------
-    result = weather.get_environment(
+    result = weather.get_velocity(
         latitude=latitude,
         longitude=longitude,
         timestamp=timestamp,

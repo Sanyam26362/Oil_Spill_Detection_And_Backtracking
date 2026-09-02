@@ -16,39 +16,36 @@ from app.services.weather_service import WeatherService
 router = APIRouter()
 
 
+_GLOBAL_WEATHER_SERVICE = None
+
 def get_weather_service():
     """
-    Provide a year-aware WeatherService.
-
-    The service selects the appropriate 2019 monthly
-    ERA5/CMEMS dataset from the request timestamp.
+    Provide a year-aware WeatherService as a singleton.
     """
+    global _GLOBAL_WEATHER_SERVICE
+    if _GLOBAL_WEATHER_SERVICE is None:
+        project_root = Path(
+            __file__
+        ).resolve().parents[2]
 
-    project_root = Path(
-        __file__
-    ).resolve().parents[2]
+        _GLOBAL_WEATHER_SERVICE = WeatherService(
+            weather_yearly_dir=(
+                project_root
+                / "data"
+                / "weather"
+                / "raw"
+                / "yearly"
+            ),
+            ocean_yearly_dir=(
+                project_root
+                / "data"
+                / "ocean"
+                / "raw"
+                / "yearly"
+            ),
+        )
 
-    weather = WeatherService(
-        weather_yearly_dir=(
-            project_root
-            / "data"
-            / "weather"
-            / "raw"
-            / "yearly"
-        ),
-        ocean_yearly_dir=(
-            project_root
-            / "data"
-            / "ocean"
-            / "raw"
-            / "yearly"
-        ),
-    )
-
-    try:
-        yield weather
-    finally:
-        weather.close()
+    yield _GLOBAL_WEATHER_SERVICE
 
 
 def get_attribution_engine(

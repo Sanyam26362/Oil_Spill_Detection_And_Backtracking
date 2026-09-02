@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "SIH Oil Spill & Vessel Attribution API"
     VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
+    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:5173"
     
     # Database Settings
     POSTGRES_USER: str

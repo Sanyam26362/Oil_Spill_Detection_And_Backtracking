@@ -193,14 +193,14 @@ class WeatherService:
             self.era5_path,
             decode_times=True,
             cache=False,
-            engine="netcdf4",
+            engine="h5netcdf",
         )
 
         cmems = xr.open_dataset(
             self.cmems_path,
             decode_times=True,
             cache=False,
-            engine="netcdf4",
+            engine="h5netcdf",
         )
 
         self.era5 = self._prepare_era5(era5)
@@ -358,14 +358,14 @@ class WeatherService:
                 era5_path,
                 decode_times=True,
                 cache=False,
-                engine="netcdf4",
+                engine="h5netcdf",
             )
 
             new_cmems_raw = xr.open_dataset(
                 cmems_path,
                 decode_times=True,
                 cache=False,
-                engine="netcdf4",
+                engine="h5netcdf",
             )
 
             new_era5 = self._prepare_era5(
@@ -435,14 +435,14 @@ class WeatherService:
                 era5_path,
                 decode_times=True,
                 cache=False,
-                engine="netcdf4",
+                engine="h5netcdf",
             )
 
             cmems_raw = xr.open_dataset(
                 cmems_path,
                 decode_times=True,
                 cache=False,
-                engine="netcdf4",
+                engine="h5netcdf",
             )
 
             era5 = self._prepare_era5(
