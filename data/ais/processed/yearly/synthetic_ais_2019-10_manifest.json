@@ -1,0 +1,10 @@
+{
+  "year": 2019,
+  "month": 10,
+  "vessel_count": 200,
+  "record_count": 6190049,
+  "start_time": "2019-10-01T00:00:00+00:00",
+  "end_time": "2019-10-31T23:59:55+00:00",
+  "scenario_id": "synthetic-2019",
+  "is_synthetic": true
+}

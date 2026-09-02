@@ -1,0 +1,19 @@
+{
+  "scenario_id": "ML500-034",
+  "source": {
+    "vessel_id": "SYNTH-S500-034-SRC",
+    "latitude": 33.86354231575279,
+    "longitude": 31.171970321153623,
+    "release_time": "2019-10-15T18:44:11Z"
+  },
+  "observation": {
+    "latitude": 33.89553701162631,
+    "longitude": 31.148216520620785,
+    "timestamp": "2019-10-16T12:27:03Z"
+  },
+  "benchmark": {
+    "month": 10,
+    "generation_attempt": 1,
+    "estimated_age_hours": 17.714197076155923
+  }
+}

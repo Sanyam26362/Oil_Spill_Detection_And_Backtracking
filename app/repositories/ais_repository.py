@@ -200,6 +200,7 @@ class AISRepository:
             )
 
         stmt = (
+
             select(AISPosition)
             .where(*conditions)
             .order_by(

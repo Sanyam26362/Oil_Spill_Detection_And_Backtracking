@@ -56,10 +56,13 @@ class SyntheticScenarioConfig:
     # Example: "SYNTH-S001-" produces "SYNTH-S001-SRC", "SYNTH-S001-BKG0001"
     vessel_id_prefix: str = "SYNTH-"
 
-    # Source vessel keeps the existing naming convention by default.
     source_vessel_id: str = "SYNTH-000011"
 
     decoy_start_id: int = 12
+
+    # Explicit decoy behaviors to inject specific challenges.
+    # If empty, fallback to default decoy generator logic.
+    decoy_behaviors: list[str] = field(default_factory=list)
 
     # ==============================================================
     # SOURCE-VESSEL BEHAVIOR

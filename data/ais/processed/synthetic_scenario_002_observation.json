@@ -2,8 +2,8 @@
   "scenario_id": "scenario-002",
   "synthetic": true,
   "observation": {
-    "latitude": 33.48090362468654,
-    "longitude": 34.03963561414212,
+    "latitude": 35.07102733762664,
+    "longitude": 24.05447056840761,
     "timestamp": "2019-07-15T18:00:00Z"
   }
 }

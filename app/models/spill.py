@@ -1,53 +1,25 @@
-from sqlalchemy import DateTime, Float, String
-from sqlalchemy.orm import Mapped, mapped_column
-from geoalchemy2 import Geometry
-
+from sqlalchemy import Column, Integer, String, Float, DateTime, func
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
+class OilSpillDetection(Base):
+    __tablename__ = "oil_spill_detections"
 
-class OilSpill(Base):
-    __tablename__ = "oil_spills"
+    id = Column(Integer, primary_key=True, index=True)
+    spill_id = Column(String, unique=True, index=True, nullable=False)
+    detected_at = Column(DateTime(timezone=True), nullable=False)
+    centroid_lat = Column(Float, nullable=False)
+    centroid_lon = Column(Float, nullable=False)
 
-    spill_id: Mapped[str] = mapped_column(
-        String,
-        primary_key=True,
-    )
+    # Store polygon as JSONB (list of [lon, lat] pairs)
+    polygon = Column(JSONB, nullable=False)
 
-    detected_at: Mapped[object] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        index=True,
-    )
+    area_km2 = Column(Float, nullable=False)
+    estimated_age_hours = Column(Float, nullable=False)
+    confidence_score = Column(Float, nullable=False)
+    cloudinary_url = Column(String, nullable=False)
+    source_image_id = Column(String, nullable=True)
 
-    centroid: Mapped[object] = mapped_column(
-        Geometry(
-            geometry_type="POINT",
-            srid=4326,
-            spatial_index=True,
-        ),
-        nullable=False,
-    )
-
-    polygon: Mapped[object] = mapped_column(
-        Geometry(
-            geometry_type="POLYGON",
-            srid=4326,
-            spatial_index=True,
-        ),
-        nullable=False,
-    )
-
-    area_km2: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-    )
-
-    estimated_age_hours: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-    )
-
-    confidence_score: Mapped[float] = mapped_column(
-        Float,
-        nullable=False,
-    )
+    # Keep the exact ML output just in case
+    raw_prediction = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

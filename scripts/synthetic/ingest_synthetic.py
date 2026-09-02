@@ -4,6 +4,9 @@ import json
 import logging
 from pathlib import Path
 
+import sys
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 import pandas as pd
 from sqlalchemy import delete, insert, select, func
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -40,13 +43,13 @@ async def ingest_scenario(csv_path: str, ground_truth_path: str | None = None) -
     scenario_ids = df["scenario_id"].unique()
     if len(scenario_ids) != 1:
         raise ValueError(f"Multiple scenario IDs found in CSV: {scenario_ids}")
-    
+
     scenario_id = str(scenario_ids[0])
     logger.info(f"Processing scenario: {scenario_id}")
 
     # Convert timestamps
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
-    
+
     # Process vessels
     vessels_df = df[["vessel_id", "country", "vessel_type"]].drop_duplicates("vessel_id")
     vessels = [
@@ -68,7 +71,7 @@ async def ingest_scenario(csv_path: str, ground_truth_path: str | None = None) -
                 set_={"country": stmt.excluded.country, "shiptype_name": stmt.excluded.shiptype_name}
             )
             await db.execute(stmt)
-        
+
         # Delete existing data for this scenario to be idempotent
         logger.info("Cleaning up existing data for this scenario...")
         await db.execute(delete(AISPosition).where(AISPosition.scenario_id == scenario_id))
@@ -91,29 +94,29 @@ async def ingest_scenario(csv_path: str, ground_truth_path: str | None = None) -
             })
 
         logger.info(f"Inserting {len(positions)} AIS records...")
-        
+
         # Insert in chunks of 1000 to avoid parameter limits
         chunk_size = 1000
         for i in range(0, len(positions), chunk_size):
             chunk = positions[i:i + chunk_size]
             await db.execute(insert(AISPosition).values(chunk))
-        
+
         await db.commit()
-        
+
         # Validation
         cnt = await db.scalar(select(func.count()).select_from(AISPosition).where(AISPosition.scenario_id == scenario_id))
         logger.info(f"Inserted row count: {cnt} (Expected: {len(positions)})")
         assert cnt == len(positions), "Row counts do not match!"
-        
+
         if ground_truth_path:
             gt_file = Path(ground_truth_path)
             if gt_file.exists():
                 with gt_file.open() as f:
                     gt = json.load(f)
-                
+
                 source_vid = gt["source"]["vessel_id"]
                 source_ts = pd.to_datetime(gt["source"]["timestamp"]).to_pydatetime()
-                
+
                 # check release record
                 src_stmt = select(AISPosition).where(
                     AISPosition.scenario_id == scenario_id,
@@ -135,5 +138,5 @@ if __name__ == "__main__":
     parser.add_argument("--csv", required=True, help="Path to synthetic scenario CSV")
     parser.add_argument("--ground-truth", required=False, help="Path to ground truth JSON (optional)")
     args = parser.parse_args()
-    
+
     asyncio.run(ingest_scenario(args.csv, args.ground_truth))

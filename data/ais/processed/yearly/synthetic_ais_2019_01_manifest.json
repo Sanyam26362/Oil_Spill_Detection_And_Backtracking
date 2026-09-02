@@ -1,0 +1,20 @@
+{
+  "year": 2019,
+  "month": 1,
+  "seed": 2026,
+  "vessel_count": 200,
+  "record_count": 6210496,
+  "start_time": "2019-01-01T00:00:00+00:00",
+  "end_time": "2019-01-31T23:59:55+00:00",
+  "region": {
+    "latitude_min": 30.5,
+    "latitude_max": 36.5,
+    "longitude_min": 30.25,
+    "longitude_max": 35.75
+  },
+  "scenario_id": "synthetic-2019",
+  "is_synthetic": true,
+  "missing_heading_rate": 0.3819,
+  "missing_course_rate": 0.1223,
+  "missing_speed_rate": 0.0027
+}

@@ -1,32 +1,211 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.models.schemas import SpillIngestSchema
-from app.services.spill_service import SpillService
+from app.models.spill import OilSpillDetection
+from app.models.schemas import (
+    MLPredictionPayload,
+    SpillDetectionItem,
+)
+from app.repositories.spill_repository import SpillRepository
 
 
 router = APIRouter()
 
 
 @router.post(
-    "/ingest",
+    "/ingest-ml",
     status_code=status.HTTP_201_CREATED,
 )
-async def ingest_oil_spill(
-    spill_data: SpillIngestSchema,
+async def ingest_ml_detections(
+    payload: MLPredictionPayload,
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Ingest an oil-spill detection produced by the ML pipeline.
+    Ingest real ML detection JSON.
+
+    One JSON file may contain multiple detections.
+    Each spill_id becomes an independent database row.
     """
 
-    spill = await SpillService.process_and_store_spill(
-        spill_data,
-        db,
-    )
+    inserted_spills = []
+    skipped_spills = []
+
+    for detection in payload.detections:
+
+        existing = await SpillRepository.get_spill(
+            db,
+            detection.spill_id,
+        )
+
+        if existing:
+            skipped_spills.append(
+                detection.spill_id
+            )
+            continue
+
+        spill_data = {
+            "spill_id": detection.spill_id,
+
+            "detected_at": detection.detected_at,
+
+            "centroid_lat": (
+                detection.centroid.lat
+            ),
+
+            "centroid_lon": (
+                detection.centroid.lon
+            ),
+
+            "polygon": detection.polygon,
+
+            "area_km2": (
+                detection.area_km2
+            ),
+
+            "estimated_age_hours": (
+                detection.estimated_age_hours
+            ),
+
+            "confidence_score": (
+                detection.confidence_score
+            ),
+
+            "cloudinary_url": (
+                detection.cloudinary_url
+            ),
+
+            "source_image_id": None,
+
+            "raw_prediction": (
+                detection.model_dump(
+                    mode="json"
+                )
+            ),
+        }
+
+        new_spill = (
+            await SpillRepository.create_spill(
+                db,
+                spill_data,
+            )
+        )
+
+        inserted_spills.append(
+            new_spill.spill_id
+        )
 
     return {
-        "message": "Spill data ingested successfully.",
-        "spill_id": spill.spill_id,
+        "message": (
+            "ML detections processed successfully."
+        ),
+        "inserted_count": len(
+            inserted_spills
+        ),
+        "skipped_count": len(
+            skipped_spills
+        ),
+        "inserted_spill_ids": inserted_spills,
+        "skipped_spill_ids": skipped_spills,
     }
+
+
+@router.get(
+    "",
+    response_model=list[SpillDetectionItem],
+)
+async def get_all_spills(
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return all detected oil spills.
+
+    Used by the frontend to initialize the map.
+    """
+
+    spills = (
+        await SpillRepository.get_all_spills(
+            db
+        )
+    )
+
+    return [
+        SpillDetectionItem(
+            spill_id=spill.spill_id,
+
+            detected_at=spill.detected_at,
+
+            centroid={
+                "lat": spill.centroid_lat,
+                "lon": spill.centroid_lon,
+            },
+
+            polygon=spill.polygon,
+
+            area_km2=spill.area_km2,
+
+            estimated_age_hours=(
+                spill.estimated_age_hours
+            ),
+
+            confidence_score=(
+                spill.confidence_score
+            ),
+
+            image_reference=(
+                spill.cloudinary_url
+            ),
+        )
+        for spill in spills
+    ]
+
+
+@router.get(
+    "/{spill_id}",
+    response_model=SpillDetectionItem,
+)
+async def get_spill_details(
+    spill_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return one spill for the frontend detail panel.
+    """
+
+    spill = await SpillRepository.get_spill(
+        db,
+        spill_id,
+    )
+
+    if spill is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Spill not found",
+        )
+
+    return SpillDetectionItem(
+        spill_id=spill.spill_id,
+
+        detected_at=spill.detected_at,
+
+        centroid={
+            "lat": spill.centroid_lat,
+            "lon": spill.centroid_lon,
+        },
+
+        polygon=spill.polygon,
+
+        area_km2=spill.area_km2,
+
+        estimated_age_hours=(
+            spill.estimated_age_hours
+        ),
+
+        confidence_score=(
+            spill.confidence_score
+        ),
+
+        image_reference=(
+            spill.cloudinary_url
+        ),
+    )

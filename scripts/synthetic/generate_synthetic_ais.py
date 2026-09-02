@@ -289,9 +289,10 @@ def generate_background_vessel(
 ) -> pd.DataFrame:
 
     prefix = getattr(scenario, 'vessel_id_prefix', 'SYNTH-')
-    vessel_id = (
-        f"{prefix}BKG{vessel_number:04d}"
-    )
+    if scenario.scenario_id == "scenario-003":
+        vessel_id = f"{prefix}BG{vessel_number:03d}"
+    else:
+        vessel_id = f"{prefix}BKG{vessel_number:04d}"
 
     vessel_type = sample_vessel_type(rng)
 
@@ -849,17 +850,25 @@ def generate_decoy_vessel(
     end_time = release_time + pd.Timedelta(hours=6)
 
     prefix = getattr(scenario, 'vessel_id_prefix', 'SYNTH-')
-    vessel_id = f"{prefix}DCY{scenario.decoy_start_id + decoy_index:04d}"
+    if scenario.scenario_id == "scenario-003":
+        vessel_id = f"{prefix}DCY{scenario.decoy_start_id + decoy_index:02d}"
+    else:
+        vessel_id = f"{prefix}DCY{scenario.decoy_start_id + decoy_index:04d}"
     vessel_type = ["Tanker", "Cargo", "Tanker", "Passenger", "Tanker", "Fishing"][decoy_index % 6]
 
-    b_type = decoy_index % 6
-    
+    if scenario.decoy_behaviors and decoy_index < len(scenario.decoy_behaviors):
+        b_type = scenario.decoy_behaviors[decoy_index]
+    else:
+        b_type = decoy_index % 6
+
     target_time = release_time
     target_lat = scenario.release_lat
     target_lon = scenario.release_lon
     target_speed = 12.0
     slowdown = False
     loiter = False
+    early_departure = False
+    fly_through = False
 
     if b_type == 0:
         target_lat += rng.uniform(-0.02, 0.02)
@@ -882,6 +891,42 @@ def generate_decoy_vessel(
         target_lat += rng.uniform(-0.05, 0.05)
         target_lon += rng.uniform(-0.05, 0.05)
         target_speed = rng.uniform(11.0, 15.0)
+    elif b_type == "DCY01":
+        # Passes close to source at normal speed. No meaningful slowdown.
+        target_lat += rng.uniform(0.01, 0.03) * rng.choice([-1, 1])
+        target_lon += rng.uniform(0.01, 0.03) * rng.choice([-1, 1])
+        target_speed = rng.uniform(11.0, 15.0)
+        fly_through = True
+    elif b_type == "DCY02":
+        # Approaches source and slows down, but minimum distance remains outside release tolerance.
+        target_lat += rng.uniform(0.05, 0.08) * rng.choice([-1, 1])
+        target_lon += rng.uniform(0.05, 0.08) * rng.choice([-1, 1])
+        target_speed = rng.uniform(2.0, 4.0)
+        slowdown = True
+    elif b_type == "DCY03":
+        # Reaches source region but at the wrong time (e.g. 3 hours early).
+        target_lat += rng.uniform(-0.01, 0.01)
+        target_lon += rng.uniform(-0.01, 0.01)
+        target_time = release_time - pd.Timedelta(hours=rng.uniform(2.5, 4.0))
+        target_speed = rng.uniform(11.0, 15.0)
+    elif b_type == "DCY04":
+        # Loiters near source but does not have a valid approach pattern (e.g. starts and stays there).
+        target_lat += rng.uniform(0.01, 0.02) * rng.choice([-1, 1])
+        target_lon += rng.uniform(0.01, 0.02) * rng.choice([-1, 1])
+        target_speed = 1.0
+        # Instead of using the complex loiter phase, we just make it drive extremely slowly (1 knot) the whole time
+        # so it just crawls around the source area.
+        loiter = False
+        slowdown = False
+        target_time = release_time
+    elif b_type == "DCY05":
+        # Approaches correctly but departs before actual release time.
+        target_lat += rng.uniform(-0.01, 0.01)
+        target_lon += rng.uniform(-0.01, 0.01)
+        target_time = release_time - pd.Timedelta(hours=rng.uniform(1.0, 1.5))
+        target_speed = rng.uniform(1.0, 2.0)
+        slowdown = True
+        early_departure = True
     else:
         target_lat += rng.uniform(0.08, 0.12) * rng.choice([-1, 1])
         target_lon += rng.uniform(0.08, 0.12) * rng.choice([-1, 1])
@@ -891,7 +936,7 @@ def generate_decoy_vessel(
 
     seconds_to_target = (target_time - start_time).total_seconds()
     approach_speed = 12.0 if slowdown or loiter else target_speed
-    
+
     distance_km = (approach_speed * 1.852 * seconds_to_target) / 3600.0
     angle = rng.uniform(0, 360)
     bearing = (angle + 180) % 360
@@ -902,7 +947,7 @@ def generate_decoy_vessel(
     b_rad = math.radians(angle)
     lat2 = math.asin(math.sin(lat1) * math.cos(angular_distance) + math.cos(lat1) * math.sin(angular_distance) * math.cos(b_rad))
     lon2 = lon1 + math.atan2(math.sin(b_rad) * math.sin(angular_distance) * math.cos(lat1), math.cos(angular_distance) - math.sin(lat1) * math.sin(lat2))
-    
+
     current_lat = math.degrees(lat2)
     current_lon = math.degrees(lon2)
     current_time = start_time
@@ -912,7 +957,7 @@ def generate_decoy_vessel(
     while current_time <= end_time:
         course = bearing_between(current_lat, current_lon, target_lat, target_lon)
         minutes_from_target = (current_time - target_time).total_seconds() / 60.0
-        
+
         if slowdown and -40 <= minutes_from_target <= 0:
             speed = max(target_speed, approach_speed - (approach_speed - target_speed) * (40 + minutes_from_target)/40.0)
         elif loiter and 0 < minutes_from_target <= 40:
@@ -923,13 +968,13 @@ def generate_decoy_vessel(
             course = bearing
         else:
             speed = approach_speed
-            
+
         interval = sample_reporting_interval(rng, moving=(speed > 3.0))
-        
+
         distance_to_target = haversine_km(current_lat, current_lon, target_lat, target_lon)
         max_dist = speed * 1.852 * interval / 3600.0
-        
-        if minutes_from_target <= 0 and max_dist >= distance_to_target:
+
+        if not fly_through and minutes_from_target <= 0 and max_dist >= distance_to_target:
             interval = max(1, int((target_time - current_time).total_seconds()))
             if interval > 0:
                 speed = (distance_to_target * 3600.0) / (interval * 1.852)
@@ -938,7 +983,7 @@ def generate_decoy_vessel(
             course = bearing
         else:
             current_lat, current_lon = move_vessel(current_lat, current_lon, course, speed, interval)
-            
+
         add_record(
             records, vessel_id, current_time, current_lat, current_lon,
             speed + rng.normal(0, 0.15), course, course + rng.normal(0, 1),
@@ -1051,8 +1096,9 @@ def generate_scenario_dataset(
         "candidate_vessels": [
             config.source_vessel_id,
             *[
-                f"{getattr(config, 'vessel_id_prefix', 'SYNTH-')}"
-                f"DCY{config.decoy_start_id + i:04d}"
+                f"{getattr(config, 'vessel_id_prefix', 'SYNTH-')}DCY{config.decoy_start_id + i:02d}"
+                if config.scenario_id == "scenario-003"
+                else f"{getattr(config, 'vessel_id_prefix', 'SYNTH-')}DCY{config.decoy_start_id + i:04d}"
                 for i in range(
                     config.num_decoy_vessels
                 )

@@ -1,0 +1,43 @@
+{
+  "scenario_id": "scenario-005",
+  "synthetic": true,
+  "source": {
+    "vessel_id": "SYNTH-005-SRC",
+    "latitude": 34.8,
+    "longitude": 24.0,
+    "timestamp": "2019-10-15T12:00:00Z"
+  },
+  "observation": {
+    "latitude": 34.76523576752078,
+    "longitude": 24.037228865713644,
+    "timestamp": "2019-10-15T18:00:00Z",
+    "drift_duration_hours": 6.0
+  },
+  "candidate_vessels": [
+    "SYNTH-005-SRC",
+    "SYNTH-005-DCY0001",
+    "SYNTH-005-DCY0002",
+    "SYNTH-005-DCY0003",
+    "SYNTH-005-DCY0004",
+    "SYNTH-005-DCY0005"
+  ],
+  "expected_behavior": {
+    "approach": true,
+    "slowdown_near_source": true,
+    "release_at_source": true,
+    "brief_loiter": true,
+    "departure_after_release": true
+  },
+  "forward_drift_validation": {
+    "generated_by": "DriftEngine.forward_drift",
+    "windage": 0.03,
+    "duration_hours": 6.0,
+    "timestep_minutes": 15,
+    "true_release_lat": 34.8,
+    "true_release_lon": 24.0,
+    "true_release_time": "2019-10-15T12:00:00+00:00",
+    "generated_observation_lat": 34.76523576752078,
+    "generated_observation_lon": 24.037228865713644,
+    "generated_observation_time": "2019-10-15T18:00:00+00:00"
+  }
+}

@@ -3,22 +3,22 @@
   "synthetic": true,
   "source": {
     "vessel_id": "SYNTH-000011",
-    "latitude": 33.5,
-    "longitude": 34.0,
+    "latitude": 35.05,
+    "longitude": 24.04,
     "timestamp": "2019-07-15T12:00:00Z"
   },
   "observation": {
-    "latitude": 33.48090362468654,
-    "longitude": 34.03963561414212,
+    "latitude": 35.07102733762664,
+    "longitude": 24.05447056840761,
     "timestamp": "2019-07-15T18:00:00Z",
     "drift_duration_hours": 6.0
   },
   "candidate_vessels": [
     "SYNTH-000011",
-    "SYNTH-000012",
-    "SYNTH-000013",
-    "SYNTH-000014",
-    "SYNTH-000015"
+    "SYNTH-DCY0012",
+    "SYNTH-DCY0013",
+    "SYNTH-DCY0014",
+    "SYNTH-DCY0015"
   ],
   "expected_behavior": {
     "approach": true,

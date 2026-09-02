@@ -1,0 +1,31 @@
+{
+  "scenario_id": "scenario-003",
+  "synthetic": true,
+  "source": {
+    "vessel_id": "SYNTH-003-SRC",
+    "latitude": 35.05,
+    "longitude": 24.04,
+    "timestamp": "2019-07-15T12:00:00Z"
+  },
+  "observation": {
+    "latitude": 35.03,
+    "longitude": 24.06,
+    "timestamp": "2019-07-15T18:00:00Z",
+    "drift_duration_hours": 6.0
+  },
+  "candidate_vessels": [
+    "SYNTH-003-SRC",
+    "SYNTH-003-DCY01",
+    "SYNTH-003-DCY02",
+    "SYNTH-003-DCY03",
+    "SYNTH-003-DCY04",
+    "SYNTH-003-DCY05"
+  ],
+  "expected_behavior": {
+    "approach": true,
+    "slowdown_near_source": true,
+    "release_at_source": true,
+    "brief_loiter": true,
+    "departure_after_release": true
+  }
+}

@@ -1,0 +1,120 @@
+{
+  "source_estimate": {
+    "latitude": 35.052893013306964,
+    "longitude": 24.044584623711415,
+    "radius_km": 0.9501454961437837
+  },
+  "estimated_release_time": "2019-07-15T12:00:00+00:00",
+  "candidate_count": 9,
+  "candidates": [
+    {
+      "vessel_id": "SYNTH-004-SRC",
+      "score": 0.9372,
+      "proximity_score": 0.9368,
+      "temporal_score": 1.0,
+      "slowdown_score": 0.8849,
+      "loiter_score": 1.0,
+      "approach_score": 0.9587,
+      "departure_score": 0.8494,
+      "closest_distance_km": 0.3161,
+      "minimum_event_speed_knots": 0.8
+    },
+    {
+      "vessel_id": "SYNTH-004-DCY0004",
+      "score": 0.7108,
+      "proximity_score": 0.6907,
+      "temporal_score": 1.0,
+      "slowdown_score": 0.0,
+      "loiter_score": 1.0,
+      "approach_score": 0.9048,
+      "departure_score": 1.0,
+      "closest_distance_km": 1.5466,
+      "minimum_event_speed_knots": 0.27
+    },
+    {
+      "vessel_id": "SYNTH-004-DCY0001",
+      "score": 0.4811,
+      "proximity_score": 0.3432,
+      "temporal_score": 0.991,
+      "slowdown_score": 0.0,
+      "loiter_score": 0.0,
+      "approach_score": 0.973,
+      "departure_score": 1.0,
+      "closest_distance_km": 3.2842,
+      "minimum_event_speed_knots": 12.15
+    },
+    {
+      "vessel_id": "SYNTH-004-BKG0035",
+      "score": 0.4084,
+      "proximity_score": 0.073,
+      "temporal_score": 0.9282,
+      "slowdown_score": 0.0043,
+      "loiter_score": 0.0,
+      "approach_score": 1.0,
+      "departure_score": 1.0,
+      "closest_distance_km": 4.6348,
+      "minimum_event_speed_knots": 7.33
+    },
+    {
+      "vessel_id": "SYNTH-004-BKG0114",
+      "score": 0.3521,
+      "proximity_score": 0.41,
+      "temporal_score": 0.9433,
+      "slowdown_score": 0.0127,
+      "loiter_score": 0.0278,
+      "approach_score": 0.8108,
+      "departure_score": 0.0,
+      "closest_distance_km": 2.9502,
+      "minimum_event_speed_knots": 5.09
+    },
+    {
+      "vessel_id": "SYNTH-004-BKG0006",
+      "score": 0.3352,
+      "proximity_score": 0.0,
+      "temporal_score": 0.9797,
+      "slowdown_score": 0.0,
+      "loiter_score": 0.0,
+      "approach_score": 0.5057,
+      "departure_score": 1.0,
+      "closest_distance_km": 9.1732,
+      "minimum_event_speed_knots": 4.65
+    },
+    {
+      "vessel_id": "SYNTH-004-BKG0087",
+      "score": 0.3237,
+      "proximity_score": 0.0,
+      "temporal_score": 0.9406,
+      "slowdown_score": 0.0,
+      "loiter_score": 0.0,
+      "approach_score": 0.4607,
+      "departure_score": 1.0,
+      "closest_distance_km": 6.503,
+      "minimum_event_speed_knots": 4.46
+    },
+    {
+      "vessel_id": "SYNTH-004-DCY0005",
+      "score": 0.3177,
+      "proximity_score": 0.0,
+      "temporal_score": 0.9463,
+      "slowdown_score": 0.0,
+      "loiter_score": 0.0,
+      "approach_score": 0.4058,
+      "departure_score": 1.0,
+      "closest_distance_km": 15.0838,
+      "minimum_event_speed_knots": 11.78
+    },
+    {
+      "vessel_id": "SYNTH-004-BKG0104",
+      "score": 0.1874,
+      "proximity_score": 0.0,
+      "temporal_score": 0.8789,
+      "slowdown_score": 0.0,
+      "loiter_score": 0.0,
+      "approach_score": 0.4444,
+      "departure_score": 0.0,
+      "closest_distance_km": 17.3809,
+      "minimum_event_speed_knots": 12.1
+    }
+  ],
+  "top_prediction": "SYNTH-004-SRC"
+}

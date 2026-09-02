@@ -4,6 +4,11 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.append(str(PROJECT_ROOT))
+
 from app.services.drift_engine import DriftEngine
 from app.services.weather_service import WeatherService
 
@@ -17,14 +22,20 @@ from scripts.synthetic.scenario import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-ERA5_PATH = (
+weather_yearly_dir = (
     PROJECT_ROOT
-    / "data/weather/raw/era5_wind_2019-07-event.nc"
+    / "data"
+    / "weather"
+    / "raw"
+    / "yearly"
 )
 
-CMEMS_PATH = (
+ocean_yearly_dir = (
     PROJECT_ROOT
-    / "data/ocean/raw/med_currents_2019-07-event.nc"
+    / "data"
+    / "ocean"
+    / "raw"
+    / "yearly"
 )
 
 OUTPUT_DIR = (
@@ -45,8 +56,8 @@ def main() -> None:
         tzinfo=timezone.utc,
     )
 
-    true_lat = 33.5
-    true_lon = 34.0
+    true_lat = 35.05
+    true_lon = 24.04
 
     drift_duration_hours = 6.0
 
@@ -56,8 +67,8 @@ def main() -> None:
     # --------------------------------------------------------------
 
     with WeatherService(
-        era5_path=ERA5_PATH,
-        cmems_path=CMEMS_PATH,
+        weather_yearly_dir=weather_yearly_dir,
+        ocean_yearly_dir=ocean_yearly_dir,
     ) as weather:
 
         drift_engine = DriftEngine(
@@ -88,11 +99,11 @@ def main() -> None:
 
         drift_duration_hours=drift_duration_hours,
 
-        bounds_lat_min=33.0,
-        bounds_lat_max=34.5,
+        bounds_lat_min=34.6,
+        bounds_lat_max=35.4,
 
-        bounds_lon_min=33.5,
-        bounds_lon_max=35.0,
+        bounds_lon_min=23.6,
+        bounds_lon_max=24.4,
 
         num_background_vessels=150,
         num_decoy_vessels=4,

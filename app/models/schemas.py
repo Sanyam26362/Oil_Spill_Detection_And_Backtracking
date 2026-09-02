@@ -1,53 +1,63 @@
-from datetime import datetime, timezone
-from typing import List, Tuple
-
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-
-
-class Centroid(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    lon: float = Field(..., ge=-180.0, le=180.0)
-    lat: float = Field(..., ge=-90.0, le=90.0)
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
 
 
-class SpillIngestSchema(BaseModel):
-    """Schema for validating incoming ML oil-spill detection data."""
+# ============================================================
+# ML INGESTION SCHEMAS
+# ============================================================
 
-    model_config = ConfigDict(extra="forbid")
+class CentroidSchema(BaseModel):
+    lon: float
+    lat: float
 
-    spill_id: str = Field(..., min_length=1)
+
+class SpillDetectionItem(BaseModel):
+    spill_id: str
     detected_at: datetime
-    centroid: Centroid
+    centroid: CentroidSchema
+    polygon: List[List[float]]
+    area_km2: float
+    estimated_age_hours: float
+    confidence_score: float
+    image_reference: str
 
-    polygon: List[Tuple[float, float]] = Field(
-        ...,
-        min_length=4,
-        description="Closed list of [longitude, latitude] coordinate pairs",
-    )
 
-    area_km2: float = Field(..., gt=0)
-    estimated_age_hours: float = Field(..., ge=0)
-    confidence_score: float = Field(..., ge=0.0, le=1.0)
+class MLPredictionPayload(BaseModel):
+    detections: List[SpillDetectionItem]
 
-    @field_validator("detected_at")
-    @classmethod
-    def validate_utc_timestamp(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
-            raise ValueError(
-                "detected_at must include timezone information and be in UTC."
-            )
 
-        return value.astimezone(timezone.utc)
+# ============================================================
+# FRONTEND RESPONSE SCHEMAS
+# ============================================================
 
-    @model_validator(mode="after")
-    def validate_polygon(self) -> "SpillIngestSchema":
-        first_point = self.polygon[0]
-        last_point = self.polygon[-1]
+class TrajectoryPoint(BaseModel):
+    lat: float
+    lon: float
+    timestamp: datetime
 
-        if first_point != last_point:
-            raise ValueError(
-                "Polygon must be closed: first coordinate must equal last coordinate."
-            )
 
-        return self
+class CandidateVessel(BaseModel):
+    vessel_id: str
+    vessel_name: Optional[str] = None
+    mmsi: Optional[str] = None
+    imo: Optional[str] = None
+    attribution_score: float
+    distance_to_origin_km: float
+    time_difference_hours: float
+    trajectory_correlation: float
+
+
+class SpillOrigin(BaseModel):
+    lat: float
+    lon: float
+    timestamp: datetime
+    confidence: float
+
+
+class BacktrackResponse(BaseModel):
+    spill: SpillDetectionItem
+    origin: SpillOrigin
+    backward_trajectory: List[TrajectoryPoint]
+    forward_trajectory: List[TrajectoryPoint]
+    candidate_vessels: List[CandidateVessel]

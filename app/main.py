@@ -1,10 +1,13 @@
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
+
 from app.core.config import settings
 from app.core.database import Base, engine
 from app.routers import spills, drift, attribution
 from app.models.ais import AISPosition, Vessel
-from app.models.spill import OilSpill
+from app.models.spill import OilSpillDetection
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -14,8 +17,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Close the
-    #  database connection pool when the application shuts down
+    # Close database connection pool
     await engine.dispose()
 
 
@@ -26,7 +28,6 @@ app = FastAPI(
 )
 
 
-# Register spill-related API routes
 app.include_router(
     spills.router,
     prefix=f"{settings.API_V1_STR}/spills",

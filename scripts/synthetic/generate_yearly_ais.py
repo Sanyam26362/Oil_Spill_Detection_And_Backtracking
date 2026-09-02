@@ -41,7 +41,7 @@ CMEMS_PATH = (
 
 # We deliberately start with January-June.
 # Change this to 12 only after the half-year run passes validation.
-START_MONTH = 7
+START_MONTH = 1
 END_MONTH = 12
 
 
@@ -514,7 +514,7 @@ def generate_vessel_month(
         current_time += timedelta(
             seconds=next_interval
         )
-        
+
     vessel.next_report_time = current_time.isoformat()
 
     return records

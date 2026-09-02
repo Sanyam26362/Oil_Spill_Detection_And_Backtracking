@@ -70,13 +70,8 @@ data/ocean/raw/
 # Generated benchmark datasets
 # =========================
 
-# Individual benchmark AIS datasets
 data/ais/processed/BM-*.csv
-
-# Individual benchmark ground-truth files
 data/ais/processed/BM-*_gt.json
-
-# Individual benchmark observation files
 data/ais/processed/BM-*_obs.json
 
 # =========================
@@ -86,8 +81,26 @@ data/ais/processed/BM-*_obs.json
 # Scenario-generated AIS CSVs
 data/ais/processed/synthetic_scenario_*.csv
 
+# Yearly generated AIS
+data/ais/processed/yearly/
+
 # =========================
-# Local/generated database files
+# Generated validation / output files
+# =========================
+
+data/validation/
+json_output/
+reports/
+scratch/
+
+# =========================
+# Generated benchmark datasets
+# =========================
+
+data/ais/processed/benchmark_500_ml/
+
+# =========================
+# Local / generated database files
 # =========================
 
 *.db
@@ -100,8 +113,14 @@ data/ais/processed/synthetic_scenario_*.csv
 
 !data/ais/processed/benchmark_results.csv
 !data/ais/processed/benchmark_summary.json
-!data/ais/processed/synthetic_scenario_002_observation.json
-!data/ais/processed/synthetic_scenario_002_ground_truth.json
+
+# =========================
+# Keep synthetic scenario evidence
+# =========================
+
+!data/ais/processed/synthetic_scenario_*_ground_truth.json
+!data/ais/processed/synthetic_scenario_*_observation.json
+!data/ais/processed/synthetic_scenario_*_attribution_result.json
 
 # =========================
 # Keep documentation

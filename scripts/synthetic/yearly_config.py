@@ -15,7 +15,7 @@ class YearlyAISConfig:
     region_min_lat: float = 30.5
     region_max_lat: float = 36.5
 
-    region_min_lon: float = 30.25
+    region_min_lon: float = 23.0
     region_max_lon: float = 35.75
 
     # Reproducible generation.

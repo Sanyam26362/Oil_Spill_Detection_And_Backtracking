@@ -37,8 +37,8 @@ def test_january_lookup():
 
     try:
         velocity = service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 1,
@@ -68,8 +68,8 @@ def test_july_lookup():
 
     try:
         velocity = service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 7,
@@ -99,8 +99,8 @@ def test_december_lookup():
 
     try:
         velocity = service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 12,
@@ -130,8 +130,8 @@ def test_month_switching():
 
     try:
         service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 1,
@@ -148,8 +148,8 @@ def test_month_switching():
         )
 
         service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 2,
@@ -166,8 +166,8 @@ def test_month_switching():
         )
 
         service.get_velocity(
-            latitude=33.5,
-            longitude=34.0,
+            latitude=35.0,
+            longitude=24.0,
             timestamp=datetime(
                 2019,
                 7,
@@ -194,10 +194,10 @@ def test_vectorized_lookup():
         wind_u, wind_v, current_u, current_v = (
             service.get_velocities(
                 latitudes=np.array(
-                    [33.4, 33.5, 33.6]
+                    [34.8, 35.0, 34.9]
                 ),
                 longitudes=np.array(
-                    [33.9, 34.0, 34.1]
+                    [23.8, 24.0, 24.1]
                 ),
                 timestamp=datetime(
                     2019,
