@@ -622,7 +622,7 @@ class WeatherService:
                 {
                     self.era5_lat: latitude,
                     self.era5_lon: era5_lon,
-                    self.era5_time: timestamp,
+                    self.era5_time: timestamp64,
                 },
                 method="linear",
             )
@@ -631,7 +631,7 @@ class WeatherService:
                 {
                     self.cmems_lat: latitude,
                     self.cmems_lon: cmems_lon,
-                    self.cmems_time: timestamp,
+                    self.cmems_time: timestamp64,
                 },
                 method="linear",
             )
@@ -664,6 +664,8 @@ class WeatherService:
         lons: np.ndarray,
         timestamp: datetime,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        timestamp64 = np.datetime64(timestamp)
+
         assert self.era5 is not None
         assert self.cmems is not None
         assert self._loaded_year is not None
@@ -708,12 +710,12 @@ class WeatherService:
             era5_interp_coords = {
                 self.era5_lat: lats_da,
                 self.era5_lon: era5_lons_da,
-                self.era5_time: timestamp,
+                self.era5_time: timestamp64,
             }
             cmems_interp_coords = {
                 self.cmems_lat: lats_da,
                 self.cmems_lon: cmems_lons_da,
-                self.cmems_time: timestamp,
+                self.cmems_time: timestamp64,
             }
 
             wind_u = np.asarray(combined_era5[self.era5_u].interp(era5_interp_coords, method="linear").values)
@@ -827,7 +829,7 @@ class WeatherService:
             {
                 self.era5_lat: latitude,
                 self.era5_lon: era5_lon,
-                self.era5_time: timestamp,
+                self.era5_time: timestamp64,
             },
             method="linear",
         )
@@ -840,7 +842,7 @@ class WeatherService:
             {
                 self.cmems_lat: latitude,
                 self.cmems_lon: cmems_lon,
-                self.cmems_time: timestamp,
+                self.cmems_time: timestamp64,
             },
             method="linear",
         )
@@ -1032,7 +1034,7 @@ class WeatherService:
         era5_interp_coords = {
             self.era5_lat: lats_da,
             self.era5_lon: era5_lons_da,
-            self.era5_time: timestamp_naive,
+            self.era5_time: timestamp64,
         }
 
         wind_u = np.asarray(
@@ -1056,7 +1058,7 @@ class WeatherService:
         cmems_interp_coords = {
             self.cmems_lat: lats_da,
             self.cmems_lon: cmems_lons_da,
-            self.cmems_time: timestamp_naive,
+            self.cmems_time: timestamp64,
         }
 
         current_u = np.asarray(
