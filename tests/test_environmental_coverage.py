@@ -10,13 +10,27 @@ from app.services.drift_engine import DriftEngine
 
 @pytest.fixture(scope="module")
 def detections():
+    import asyncio
+    from app.core.database import AsyncSessionLocal, engine
+    from app.models.spill import OilSpillDetection
+    from sqlalchemy import select
+    
     async def fetch_detections():
         async with AsyncSessionLocal() as session:
             result = await session.execute(select(OilSpillDetection))
-            return result.scalars().all()
-    return asyncio.run(fetch_detections())
+            items = result.scalars().all()
+        await engine.dispose()
+        return items
+        
+    loop = asyncio.new_event_loop()
+    try:
+        items = loop.run_until_complete(fetch_detections())
+    finally:
+        loop.close()
+    return items
 
 def get_estimated_release_time(detection: OilSpillDetection) -> datetime:
+    from datetime import timedelta, timezone
     # Ensure timezone is UTC naive for WeatherService
     dt = detection.detected_at - timedelta(hours=detection.estimated_age_hours)
     if dt.tzinfo is not None:
@@ -68,10 +82,12 @@ def test_detection_coverage_stats(detections):
 
 @pytest.fixture(scope="module")
 def weather_service():
-    return WeatherService(
+    ws = WeatherService(
         weather_yearly_dir="data/weather/raw/yearly",
         ocean_yearly_dir="data/ocean/raw/yearly"
     )
+    yield ws
+    ws.close()
 
 def test_weather_service_actual_detections(detections, weather_service):
     # Test at least several detections from different months across 2019.

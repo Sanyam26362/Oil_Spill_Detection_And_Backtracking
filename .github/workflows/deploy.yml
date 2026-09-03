@@ -1,0 +1,37 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Azure VM
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.AZURE_HOST }}
+          username: ${{ secrets.AZURE_USER }}
+          key: ${{ secrets.AZURE_SSH_KEY }}
+          script: |
+            cd ~/Oil_Spill_Detection_And_Backtracking
+
+            echo "Pulling latest code..."
+            git pull origin main
+
+            echo "Rebuilding API..."
+            docker compose build api
+
+            echo "Restarting API..."
+            docker compose up -d api
+
+            echo "Waiting for API..."
+            sleep 10
+
+            echo "Checking API health..."
+            curl -f http://127.0.0.1:8000/health/ready
+
+            echo "Deployment successful!"

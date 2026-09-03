@@ -1,9 +1,12 @@
 """Shared test fixtures for the oil-spill-backend test suite."""
 from __future__ import annotations
 
+import os
 import pytest
 from pathlib import Path
 from datetime import datetime, timezone
+
+os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,3 +48,17 @@ def scoring_engine():
 CANONICAL_LAT = 33.5
 CANONICAL_LON = 34.0
 CANONICAL_TIME = datetime(2019, 7, 15, 12, 0, 0, tzinfo=timezone.utc)
+
+@pytest.fixture(autouse=True)
+def reset_db_engine():
+    """Ensure global connection pool is disposed after every test to prevent asyncpg 'Event loop is closed' or 'InterfaceError' across async tests."""
+    yield
+    from app.core.database import engine
+    engine.sync_engine.dispose()
+    
+    # Also clear xarray backend caches to prevent NetCDF: HDF errors on Windows
+    try:
+        import xarray as xr
+        xr.backends.file_manager.FILE_CACHE.clear()
+    except Exception:
+        pass

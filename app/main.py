@@ -6,7 +6,13 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.core.database import Base, engine, AsyncSessionLocal
-from app.routers import spills, drift, attribution, demo_spills
+from app.routers import (
+    spills,
+    drift,
+    attribution,
+    demo_spills,
+    visualization,
+)
 from app.services.spill_catalog_service import SpillCatalogService
 from app.models.ais import AISPosition, Vessel
 from app.models.spill import OilSpillDetection
@@ -26,6 +32,9 @@ async def lifespan(app: FastAPI):
     # Close database connection pool
     await engine.dispose()
 
+    # Close visualization weather service
+    visualization.shutdown_weather_service()
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -33,8 +42,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+
 # Setup CORS
-origins = [origin.strip() for origin in settings.CORS_ORIGINS.split(",")]
+
+origins = [
+    origin.strip()
+    for origin in settings.CORS_ORIGINS.split(",")
+]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
@@ -42,6 +57,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------
+# Existing APIs
+# ---------------------------------------------------------
 
 app.include_router(
     spills.router,
@@ -68,9 +88,25 @@ app.include_router(
 )
 
 
+# ---------------------------------------------------------
+# NEW Visualization API
+# ---------------------------------------------------------
+
+app.include_router(
+    visualization.router,
+    prefix=f"{settings.API_V1_STR}/visualization",
+    tags=["Visualization"],
+)
+
+
+# ---------------------------------------------------------
+# Health checks
+# ---------------------------------------------------------
+
 @app.get("/health", tags=["System"])
 async def health_check():
     """Check whether the API is running."""
+
     return {
         "status": "ok",
         "service": settings.PROJECT_NAME,
@@ -80,9 +116,17 @@ async def health_check():
 @app.get("/health/ready", tags=["System"])
 async def health_ready():
     """Check if the database and essential services are ready."""
+
     try:
         async with AsyncSessionLocal() as db:
             await db.execute(text("SELECT 1"))
-        return {"status": "ready"}
+
+        return {
+            "status": "ready"
+        }
+
     except Exception as e:
-        return {"status": "unready", "detail": str(e)}
+        return {
+            "status": "unready",
+            "detail": str(e),
+        }
