@@ -11,7 +11,6 @@ from app.models.drift import EnvironmentalVelocity
 class WeatherService:
     """
     Provides historical environmental conditions for the drift model.
-
     Supports:
 
     1. Existing single-pair datasets:
