@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel,Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -6,7 +6,55 @@ from datetime import datetime
 # ============================================================
 # ML INGESTION SCHEMAS
 # ============================================================
+class DemoVesselEvidencePoint(BaseModel):
+    timestamp: datetime
+    latitude: float
+    longitude: float
+    speed: Optional[float] = None
+    course: Optional[float] = None
+    heading: Optional[float] = None
 
+
+class DemoVesselEvidence(BaseModel):
+    vessel_id: str
+    is_mock: bool
+    rank: int
+    score: Optional[float] = None
+
+    vessel_name: Optional[str] = None
+    mmsi: Optional[str] = None
+    imo: Optional[str] = None
+
+    country: Optional[str] = None
+    vessel_type: Optional[str] = None
+
+    culprit_location: Optional[
+        DemoVesselEvidencePoint
+    ] = None
+
+    distance_from_backtrack_origin_km: Optional[
+        float
+    ] = None
+
+    full_trajectory_point_count: int = 0
+
+    trajectory: List[
+        DemoVesselEvidencePoint
+    ] = Field(default_factory=list)
+
+
+class DemoAttributionTrajectoryResponse(BaseModel):
+    spill_id: str
+
+    backtrack_origin: dict
+
+    verification: dict
+
+    attribution: dict
+
+    vessels: List[
+        DemoVesselEvidence
+    ]
 class CentroidSchema(BaseModel):
     lon: float
     lat: float
@@ -127,3 +175,51 @@ class DemoBacktrackResponse(BaseModel):
     spill_id: str
     backtrack: dict
     attribution: dict
+
+class DemoVesselEvidencePoint(BaseModel):
+    timestamp: datetime
+    latitude: float
+    longitude: float
+    speed: Optional[float] = None
+    course: Optional[float] = None
+    heading: Optional[float] = None
+
+
+class DemoVesselEvidence(BaseModel):
+    vessel_id: str
+    is_mock: bool
+    rank: int
+    score: Optional[float] = None
+
+    vessel_name: Optional[str] = None
+    mmsi: Optional[str] = None
+    imo: Optional[str] = None
+
+    country: Optional[str] = None
+    vessel_type: Optional[str] = None
+
+    culprit_location: Optional[
+        DemoVesselEvidencePoint
+    ] = None
+
+    distance_from_backtrack_origin_km: Optional[
+        float
+    ] = None
+
+    trajectory: List[
+        DemoVesselEvidencePoint
+    ] = Field(default_factory=list)
+
+
+class DemoAttributionTrajectoryResponse(BaseModel):
+    spill_id: str
+
+    backtrack_origin: dict
+
+    verification: dict
+
+    attribution: dict
+
+    vessels: List[
+        DemoVesselEvidence
+    ]
