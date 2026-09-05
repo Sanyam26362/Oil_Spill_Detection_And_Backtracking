@@ -23,7 +23,9 @@ jobs:
 
             echo "Fetching and syncing latest code..."
             git fetch origin main
-            git reset --hard origin/main
+            git reset --hard FETCH_HEAD
+            git clean -fd
+            git log -1 --oneline
 
             echo "Rebuilding API..."
             docker compose build api
