@@ -16,15 +16,16 @@ jobs:
           host: ${{ secrets.AZURE_HOST }}
           username: ${{ secrets.AZURE_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
-          script_stop: true
           script: |
-            set -e
             cd ~/Oil_Spill_Detection_And_Backtracking
+            git config --global --add safe.directory "*"
 
-            echo "Fetching and syncing latest code..."
+            echo "Stashing any local modifications..."
+            git stash || true
+
+            echo "Fetching and resetting to latest origin/main..."
             git fetch origin main
             git reset --hard FETCH_HEAD
-            git clean -fd
             git log -1 --oneline
 
             echo "Rebuilding API..."
