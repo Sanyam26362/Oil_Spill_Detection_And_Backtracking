@@ -16,17 +16,20 @@ jobs:
           host: ${{ secrets.AZURE_HOST }}
           username: ${{ secrets.AZURE_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
+          script_stop: true
           script: |
+            set -e
             cd ~/Oil_Spill_Detection_And_Backtracking
 
-            echo "Pulling latest code..."
-            git pull origin main
+            echo "Fetching and syncing latest code..."
+            git fetch origin main
+            git reset --hard origin/main
 
             echo "Rebuilding API..."
             docker compose build api
 
-            echo "Restarting API..."
-            docker compose up -d api
+            echo "Restarting API with force recreate..."
+            docker compose up -d --force-recreate api
 
             echo "Waiting for API..."
             sleep 10
