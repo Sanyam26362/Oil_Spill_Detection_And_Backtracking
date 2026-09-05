@@ -5,6 +5,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -12,10 +15,13 @@ jobs:
     steps:
       - name: Deploy to Azure VM
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           host: ${{ secrets.AZURE_HOST }}
           username: ${{ secrets.AZURE_USER }}
           key: ${{ secrets.AZURE_SSH_KEY }}
+          envs: GH_TOKEN
           script: |
             cd ~/Oil_Spill_Detection_And_Backtracking
             git config --global --add safe.directory "*"
@@ -23,8 +29,8 @@ jobs:
             echo "Stashing any local modifications..."
             git stash || true
 
-            echo "Fetching and resetting to latest origin/main..."
-            git fetch origin main
+            echo "Fetching latest code from private repository..."
+            git fetch https://x-access-token:${GH_TOKEN}@github.com/Sanyam26362/Oil_Spill_Detection_And_Backtracking.git main
             git reset --hard FETCH_HEAD
             git log -1 --oneline
 
@@ -39,5 +45,9 @@ jobs:
 
             echo "Checking API health..."
             curl -f http://127.0.0.1:8000/health/ready
+
+            echo "Verifying vessels API output..."
+            curl -s http://127.0.0.1:8000/api/v1/demo/spills/spill_343abc/vessels | head -c 250
+            echo ""
 
             echo "Deployment successful!"
