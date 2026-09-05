@@ -159,11 +159,20 @@ class DemoSpillVessel(BaseModel):
     vessel_id: str
     is_mock: bool
     rank: int
-    score: Optional[float]
+    score: Optional[float] = None
     vessel_name: Optional[str] = None
     mmsi: Optional[str] = None
     imo: Optional[str] = None
+    country: Optional[str] = None
+    shiptype: Optional[int] = None
+    shiptype_name: Optional[str] = None
+    vessel_type: Optional[str] = None
+    speed: Optional[float] = None
+    course: Optional[float] = None
+    heading: Optional[float] = None
     distance_to_origin_km: Optional[float] = None
+    time_difference_hours: Optional[float] = None
+    trajectory_correlation: Optional[float] = None
 
 
 class DemoSpillVesselResponse(BaseModel):

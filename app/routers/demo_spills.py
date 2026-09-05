@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import time
+import re
 
-from app.core.database import get_db
+from app.core.database import get_db, AsyncSessionLocal
+from app.repositories.ais_repository import AISRepository
+from app.services.drift_engine import DriftEngine
 
 from app.models.schemas import (
     DemoPaginationResponse,
@@ -147,12 +150,32 @@ async def get_spill_detail(
     )
 
 
+def _infer_shiptype_code(shiptype_name: str | None) -> int | None:
+    if not shiptype_name:
+        return None
+    name_lower = shiptype_name.lower()
+    if "passenger" in name_lower:
+        return 60
+    if "cargo" in name_lower:
+        return 70
+    if "tanker" in name_lower:
+        return 80
+    if "fishing" in name_lower:
+        return 30
+    if "tug" in name_lower:
+        return 52
+    if "pleasure" in name_lower:
+        return 37
+    return 90
+
+
 @router.get(
     "/{spill_id}/vessels",
     response_model=DemoSpillVesselResponse
 )
 async def get_spill_vessels(
-    spill_id: str
+    spill_id: str,
+    db: AsyncSession | None = Depends(get_db),
 ):
     s = SpillCatalogService.get_spill(
         spill_id
@@ -167,29 +190,103 @@ async def get_spill_vessels(
     vessels = []
 
     # 1. Real top vessel
-    if s["ranked_top_vessel"]:
-        vessels.append(
-            DemoSpillVessel(
-                vessel_id=s[
-                    "ranked_top_vessel"
-                ],
-                is_mock=False,
-                rank=1,
-                score=s[
-                    "ranked_top_score"
-                ]
-            )
-        )
+    real_vessel_id = s.get("ranked_top_vessel")
+    if real_vessel_id:
+        match = re.search(r"(\d+)$", real_vessel_id)
+        num = int(match.group(1)) if match else 144
+
+        vessel_data = {
+            "vessel_id": real_vessel_id,
+            "vessel_name": real_vessel_id,
+            "is_mock": False,
+            "rank": 1,
+            "score": s.get("ranked_top_score"),
+            "mmsi": f"209{num:06d}",
+            "imo": f"IMO{9000000 + num * 7}",
+            "country": "CY",
+            "shiptype": 60,
+            "shiptype_name": "Passenger",
+            "vessel_type": "Passenger",
+            "speed": None,
+            "course": None,
+            "heading": None,
+            "distance_to_origin_km": None,
+            "time_difference_hours": None,
+            "trajectory_correlation": 0.94,
+        }
+
+        # Query database for actual vessel details and positions (read-only)
+        session = db
+        close_session = False
+        if session is None:
+            session = AsyncSessionLocal()
+            close_session = True
+
+        try:
+            ais_repo = AISRepository()
+            vessel_meta = await ais_repo.get_vessel(session, real_vessel_id)
+            if vessel_meta:
+                vessel_data["country"] = vessel_meta.country or vessel_data["country"]
+                vessel_data["shiptype_name"] = vessel_meta.shiptype_name or vessel_data["shiptype_name"]
+                vessel_data["vessel_type"] = vessel_meta.shiptype_name or vessel_data["vessel_type"]
+                if vessel_meta.shiptype is not None:
+                    vessel_data["shiptype"] = vessel_meta.shiptype
+                else:
+                    vessel_data["shiptype"] = _infer_shiptype_code(vessel_meta.shiptype_name)
+
+                # Adjust MMSI prefix based on country
+                mid_map = {"CY": "209", "GR": "239", "LR": "636", "MT": "215", "PA": "352", "IT": "247"}
+                mid = mid_map.get(str(vessel_meta.country), "209")
+                vessel_data["mmsi"] = f"{mid}{num:06d}"
+
+            # Look up nearest AIS observation to the spill release origin
+            rel_time_str = s.get("estimated_release_time")
+            if rel_time_str:
+                release_time = datetime.fromisoformat(rel_time_str)
+                if release_time.tzinfo is None:
+                    release_time = release_time.replace(tzinfo=timezone.utc)
+
+                origin_lat = s.get("estimated_source_latitude") or s.get("observation_latitude")
+                origin_lon = s.get("estimated_source_longitude") or s.get("observation_longitude")
+
+                positions = await ais_repo.get_positions_for_vessel(
+                    db=session,
+                    vessel_id=real_vessel_id,
+                    start_time=release_time - timedelta(hours=2),
+                    end_time=release_time + timedelta(hours=2),
+                    synthetic_only=True,
+                )
+                if positions and origin_lat is not None and origin_lon is not None:
+                    closest = min(
+                        positions,
+                        key=lambda p: DriftEngine.haversine_km(
+                            origin_lat, origin_lon, float(p.latitude), float(p.longitude)
+                        )
+                    )
+                    dist = DriftEngine.haversine_km(
+                        origin_lat, origin_lon, float(closest.latitude), float(closest.longitude)
+                    )
+                    vessel_data["distance_to_origin_km"] = round(dist, 2)
+                    vessel_data["speed"] = round(float(closest.speed), 2) if closest.speed is not None else None
+                    vessel_data["course"] = round(float(closest.course), 2) if closest.course is not None else None
+                    vessel_data["heading"] = round(float(closest.heading), 2) if closest.heading is not None else None
+
+                    p_time = closest.timestamp
+                    if p_time.tzinfo is None:
+                        p_time = p_time.replace(tzinfo=timezone.utc)
+                    vessel_data["time_difference_hours"] = round((p_time - release_time).total_seconds() / 3600.0, 2)
+        except Exception:
+            pass
+        finally:
+            if close_session:
+                await session.close()
+
+        vessels.append(DemoSpillVessel(**vessel_data))
 
     # 2. Mock vessels
-    mock_vessels = (
-        MockVesselService.get_mock_vessels()
-    )
-
+    mock_vessels = MockVesselService.get_mock_vessels(base_vessel_id=real_vessel_id)
     for mv in mock_vessels:
-        vessels.append(
-            DemoSpillVessel(**mv)
-        )
+        vessels.append(DemoSpillVessel(**mv))
 
     return DemoSpillVesselResponse(
         spill_id=spill_id,
@@ -234,14 +331,15 @@ async def get_spill_attribution_trajectory(
         # This guarantees:
         #
         #   rank 1 -> real culprit
-        #   rank 2 -> TEST-VESSEL-01
-        #   rank 3 -> TEST-VESSEL-02
-        #   rank 4 -> TEST-VESSEL-03
+        #   rank 2 -> mock vessel 1
+        #   rank 3 -> mock vessel 2
+        #   rank 4 -> mock vessel 3
         # --------------------------------------------------------
 
         existing_vessel_response = (
             await get_spill_vessels(
-                spill_id
+                spill_id,
+                db=db,
             )
         )
 
