@@ -20,7 +20,12 @@ from app.models.schemas import (
 )
 
 from app.services.spill_catalog_service import SpillCatalogService
-from app.services.mock_vessel_service import MockVesselService
+from app.services.mock_vessel_service import (
+    MockVesselService,
+    generate_valid_mmsi,
+    generate_valid_imo,
+    extract_vessel_seed,
+)
 from app.routers.attribution import get_attribution_engine
 from app.services.attribution_engine import AttributionEngine
 from app.services.demo_vessel_evidence_service import (
@@ -192,8 +197,7 @@ async def get_spill_vessels(
     # 1. Real top vessel
     real_vessel_id = s.get("ranked_top_vessel")
     if real_vessel_id:
-        match = re.search(r"(\d+)$", real_vessel_id)
-        num = int(match.group(1)) if match else 144
+        seed = extract_vessel_seed(real_vessel_id)
 
         vessel_data = {
             "vessel_id": real_vessel_id,
@@ -201,8 +205,8 @@ async def get_spill_vessels(
             "is_mock": False,
             "rank": 1,
             "score": s.get("ranked_top_score"),
-            "mmsi": f"209{num:06d}",
-            "imo": f"IMO{9000000 + num * 7}",
+            "mmsi": generate_valid_mmsi("CY", seed, offset=0),
+            "imo": generate_valid_imo(seed, offset=0),
             "country": "CY",
             "shiptype": 60,
             "shiptype_name": "Passenger",
@@ -234,10 +238,9 @@ async def get_spill_vessels(
                 else:
                     vessel_data["shiptype"] = _infer_shiptype_code(vessel_meta.shiptype_name)
 
-                # Adjust MMSI prefix based on country
-                mid_map = {"CY": "209", "GR": "239", "LR": "636", "MT": "215", "PA": "352", "IT": "247"}
-                mid = mid_map.get(str(vessel_meta.country), "209")
-                vessel_data["mmsi"] = f"{mid}{num:06d}"
+                # Set MMSI and IMO based on detected country and seed
+                vessel_data["mmsi"] = generate_valid_mmsi(vessel_meta.country, seed, offset=0)
+                vessel_data["imo"] = generate_valid_imo(seed, offset=0)
 
             # Look up nearest AIS observation to the spill release origin
             rel_time_str = s.get("estimated_release_time")

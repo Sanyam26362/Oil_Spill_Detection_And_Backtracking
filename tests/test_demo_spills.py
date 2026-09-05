@@ -53,6 +53,45 @@ async def test_get_demo_spill_vessels():
     mock_vessels = [v for v in data["vessels"] if v["is_mock"]]
     assert len(mock_vessels) == 3
 
+
+@pytest.mark.asyncio
+async def test_get_demo_spill_343abc_vessels_mmsi_imo_compliance():
+    """
+    Validate that /api/v1/demo/spills/spill_343abc/vessels returns:
+    - Exactly 9-digit MMSI following ITU-R M.585
+    - Exactly 7-digit IMO with mathematically valid check digit according to IMO Resolution A.1078(28)
+    """
+    from app.services.mock_vessel_service import compute_imo_checksum
+
+    async with AsyncClient(app=app, base_url="http://test") as ac:
+        response = await ac.get("/api/v1/demo/spills/spill_343abc/vessels")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["spill_id"] == "spill_343abc"
+    assert len(data["vessels"]) == 4
+
+    for v in data["vessels"]:
+        mmsi = v["mmsi"]
+        imo = v["imo"]
+
+        # MMSI: exactly 9 digits
+        assert mmsi is not None
+        assert len(mmsi) == 9
+        assert mmsi.isdigit()
+
+        # IMO: exactly 7 digits
+        assert imo is not None
+        assert len(imo) == 7
+        assert imo.isdigit()
+
+        # Check digit algorithm validation:
+        first_6 = imo[:6]
+        expected_check = compute_imo_checksum(first_6)
+        actual_check = int(imo[6])
+        assert actual_check == expected_check, f"Vessel {v['vessel_id']} IMO {imo} check digit failed"
+
+
 @pytest.mark.asyncio
 async def test_health_ready():
     async with AsyncClient(app=app, base_url="http://test") as ac:
@@ -60,3 +99,4 @@ async def test_health_ready():
     
     assert response.status_code == 200
     assert response.json()["status"] in ["ready", "unready"]
+
