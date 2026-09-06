@@ -81,13 +81,15 @@ class AISRepository:
         start_idx = 0
         if corridor_origin is not None:
             origin_lat, origin_lon = corridor_origin
-            max_dist_m = max_corridor_radius_km * 1000.0
+            # Initial ping must start in the operational corridor basin (<= 120 km)
+            # to reject cross-scenario teleportation spikes before velocity stepping begins.
+            max_init_dist_m = min(max_corridor_radius_km, 120.0) * 1000.0
             while start_idx < len(positions):
                 p = positions[start_idx]
                 dist_m = AISRepository._haversine_distance_m(
                     origin_lat, origin_lon, p.latitude, p.longitude
                 )
-                if dist_m <= max_dist_m:
+                if dist_m <= max_init_dist_m:
                     break
                 start_idx += 1
 

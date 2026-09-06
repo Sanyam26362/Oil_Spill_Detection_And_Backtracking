@@ -124,13 +124,14 @@ class MockVesselService:
         id_2 = f"{prefix}-{base_num + 2:0{num_digits}d}"
         id_3 = f"{prefix}-{base_num + 3:0{num_digits}d}"
 
-        # Base mock distances around the real candidate distance
+        # Base mock distances around the real candidate distance, clamped
+        # into the outer attribution search corridor (10 - 25 km)
         base_dist = None
         if real_vessel is not None:
             base_dist = getattr(real_vessel, "distance_to_origin_km", None)
             if base_dist is None and isinstance(real_vessel, dict):
                 base_dist = real_vessel.get("distance_to_origin_km")
-        base_dist = base_dist or 15.0
+        base_dist = max(12.5, min(22.5, float(base_dist or 15.0)))
 
         dist_1 = round(base_dist + ((-1) ** 1 * (1 * 0.7)), 2)
         dist_2 = round(base_dist + ((-1) ** 2 * (2 * 0.7)), 2)
@@ -150,9 +151,9 @@ class MockVesselService:
                 "vessel_type": "Cargo",
                 "mmsi": generate_valid_mmsi("LR", base_num, offset=1),
                 "imo": generate_valid_imo(base_num, offset=1),
-                "speed": 12.5,
-                "course": 208.5,
-                "heading": 208.0,
+                "speed": 13.4,
+                "course": 210.2,
+                "heading": 212.0,
                 "distance_to_origin_km": dist_1,
                 "time_difference_hours": 1.2,
                 "trajectory_correlation": None
@@ -170,9 +171,9 @@ class MockVesselService:
                 "vessel_type": "Tanker",
                 "mmsi": generate_valid_mmsi("MT", base_num, offset=2),
                 "imo": generate_valid_imo(base_num, offset=2),
-                "speed": 10.8,
-                "course": 195.2,
-                "heading": 195.0,
+                "speed": 11.2,
+                "course": 195.0,
+                "heading": 196.5,
                 "distance_to_origin_km": dist_2,
                 "time_difference_hours": 2.5,
                 "trajectory_correlation": None
@@ -190,9 +191,9 @@ class MockVesselService:
                 "vessel_type": "Fishing",
                 "mmsi": generate_valid_mmsi("GR", base_num, offset=3),
                 "imo": generate_valid_imo(base_num, offset=3),
-                "speed": 8.2,
-                "course": 182.1,
-                "heading": 182.0,
+                "speed": 6.8,
+                "course": 182.0,
+                "heading": 184.5,
                 "distance_to_origin_km": dist_3,
                 "time_difference_hours": -1.1,
                 "trajectory_correlation": None

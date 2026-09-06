@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.ais_repository import AISRepository
 from app.services.drift_engine import DriftEngine
+from app.services.maritime_simulation import (
+    MaritimeKinematicSimulator,
+    snap_to_clean_30min,
+)
 
 
 class DemoVesselEvidenceService:
@@ -96,103 +100,61 @@ class DemoVesselEvidenceService:
         heading: float | None = None,
         backtrack_origin: dict | None = None,
         mock_vessel: Any = None,
+        detected_at: datetime | None = None,
     ):
         """
-        Deterministic mock trajectory around the real culprit.
-
-        These are ONLY for frontend visualization.
-        They are not AIS observations and do not affect attribution.
-
-        `speed`, `course`, and `heading` are propagated from the mock
-        vessel's own kinematic fields so that trajectory points carry
-        realistic values instead of null.
-
-        A small latitude jitter (±0.004°, scaled by mock_index) is
-        applied so that the three candidate markers do not collapse onto
-        a single horizontal grid line in the frontend map.
+        Generate realistic maritime mock trajectory using MaritimeKinematicSimulator.
+        Follows stochastic Ornstein-Uhlenbeck processes, dead-reckoning equations,
+        vessel-type navigation profiles (Cargo, Tanker, Fishing), clean 30-minute
+        temporal sampling (:00 and :30), and outer corridor constraints (10 - 25 km).
         """
+        vessel_type = (
+            getattr(mock_vessel, "vessel_type", None)
+            or (mock_vessel.get("vessel_type") if isinstance(mock_vessel, dict) else None)
+            or "Cargo"
+        )
+        vessel_id = (
+            getattr(mock_vessel, "vessel_id", None)
+            or (mock_vessel.get("vessel_id") if isinstance(mock_vessel, dict) else None)
+        )
+        target_dist = (
+            getattr(mock_vessel, "distance_to_origin_km", None)
+            if mock_vessel is not None
+            else None
+        )
+        if target_dist is None and isinstance(mock_vessel, dict):
+            target_dist = mock_vessel.get("distance_to_origin_km")
 
-        base = (mock_index + 1) * 0.8
+        time_diff = (
+            getattr(mock_vessel, "time_difference_hours", None)
+            if mock_vessel is not None
+            else None
+        )
+        if time_diff is None and isinstance(mock_vessel, dict):
+            time_diff = mock_vessel.get("time_difference_hours")
 
-        # Jitter sign alternates per mock index to spread markers evenly.
-        lat_jitter = (0.004 if mock_index % 2 == 0 else -0.004) * (mock_index + 1)
+        origin_lat = backtrack_origin["latitude"] if backtrack_origin else center_latitude
+        origin_lon = backtrack_origin["longitude"] if backtrack_origin else center_longitude
 
-        offsets = [
-            (-base, -0.4 * base),
-            (-0.35 * base, 0.0),
-            (0.0, 0.45 * base),
-            (0.4 * base, 0.8 * base),
-            (0.75 * base, 1.0 * base),
-        ]
+        trajectory, culprit_location, calc_dist = MaritimeKinematicSimulator.simulate_mock_trajectory(
+            origin_lat=origin_lat,
+            origin_lon=origin_lon,
+            release_time=release_time,
+            mock_index=mock_index,
+            vessel_type=vessel_type,
+            vessel_id=vessel_id,
+            detected_at=detected_at,
+            target_distance_km=target_dist,
+            time_difference_hours=time_diff,
+        )
 
-        trajectory = []
-        base_lat = None
-        base_lon = None
+        if mock_vessel is not None:
+            if hasattr(mock_vessel, "distance_to_origin_km"):
+                mock_vessel.distance_to_origin_km = round(calc_dist, 2)
+            elif isinstance(mock_vessel, dict):
+                mock_vessel["distance_to_origin_km"] = round(calc_dist, 2)
 
-        for step, (north_km, east_km) in enumerate(offsets):
-            latitude, longitude = cls._offset_point(
-                center_latitude,
-                center_longitude,
-                north_km,
-                east_km,
-            )
-
-            # Apply per-candidate latitude jitter so markers don't
-            # collapse onto a single horizontal grid line.
-            latitude = round(latitude + lat_jitter, 6)
-            longitude = round(longitude, 6)
-
-            if step == 2:
-                base_lat = latitude
-                base_lon = longitude
-
-            trajectory.append(
-                {
-                    "timestamp": release_time
-                    + timedelta(hours=-2 + step),
-                    "latitude": latitude,
-                    "longitude": longitude,
-                    "speed": speed,
-                    "course": course,
-                    "heading": heading,
-                }
-            )
-
-        if backtrack_origin is not None and mock_vessel is not None:
-            # Align trajectory distance with the vessel model distance
-            if getattr(mock_vessel, "distance_to_origin_km", None) is not None:
-                calc_dist = round(float(mock_vessel.distance_to_origin_km), 3)
-            else:
-                calc_dist = round(
-                    AISRepository._haversine_distance_m(
-                        backtrack_origin["latitude"], backtrack_origin["longitude"],
-                        base_lat, base_lon
-                    ) / 1000.0, 3
-                )
-            # Keep vessel model and trajectory payload perfectly synchronized:
-            mock_vessel.distance_to_origin_km = round(calc_dist, 2)
-
-            origin_ts = backtrack_origin["timestamp"]
-            if isinstance(origin_ts, str):
-                origin_dt = datetime.fromisoformat(origin_ts.replace("Z", "+00:00"))
-            else:
-                origin_dt = origin_ts
-            td_hours = getattr(mock_vessel, "time_difference_hours", 0.0) or 0.0
-            culprit_dt = origin_dt + timedelta(hours=td_hours)
-            culprit_timestamp = culprit_dt.isoformat().replace("+00:00", "Z")
-
-            culprit_location = {
-                "timestamp": culprit_timestamp,
-                "latitude": base_lat,
-                "longitude": base_lon,
-                "speed": getattr(mock_vessel, "speed", None) or speed,
-                "course": getattr(mock_vessel, "course", None) or course,
-                "heading": getattr(mock_vessel, "heading", None) or heading,
-            }
-
-            return trajectory, culprit_location, calc_dist
-
-        return trajectory
+        return trajectory, culprit_location, calc_dist
 
     @classmethod
     def _select_five_real_trajectory_points(
@@ -349,6 +311,17 @@ class DemoVesselEvidenceService:
             )
         )
 
+        detected_at_raw = spill.get("detected_at")
+        detected_at = (
+            self._ensure_utc(
+                datetime.fromisoformat(detected_at_raw)
+                if isinstance(detected_at_raw, str)
+                else detected_at_raw
+            )
+            if detected_at_raw
+            else None
+        )
+
         # ------------------------------------------------------------
         # Backtrack origin
         # ------------------------------------------------------------
@@ -377,22 +350,46 @@ class DemoVesselEvidenceService:
         )
 
         # ------------------------------------------------------------
-        # AIS trajectory window
+        # ------------------------------------------------------------
+        # AIS attribution window (for candidate spatial/temporal verification)
         # ------------------------------------------------------------
 
-        start_time = (
+        attrib_start = (
             release_time
             - timedelta(
                 hours=self.TRAJECTORY_HALF_WINDOW_HOURS
             )
         )
 
-        end_time = (
+        attrib_end = (
             release_time
             + timedelta(
                 hours=self.TRAJECTORY_HALF_WINDOW_HOURS
             )
         )
+
+        # ------------------------------------------------------------
+        # Full voyage trajectory window (clean :00 and :30, 30-min sampling)
+        # ------------------------------------------------------------
+
+        nominal_start = release_time - timedelta(hours=3)
+        start_time = snap_to_clean_30min(nominal_start, "round")
+
+        if detected_at is not None:
+            nominal_end = detected_at + timedelta(hours=3)
+            end_time = snap_to_clean_30min(nominal_end, "round")
+        else:
+            nominal_end = release_time + timedelta(hours=6)
+            end_time = snap_to_clean_30min(nominal_end, "round")
+
+        if end_time < start_time + timedelta(hours=6):
+            end_time = start_time + timedelta(hours=6)
+
+        times: list[datetime] = []
+        curr = start_time
+        while curr <= end_time:
+            times.append(curr)
+            curr += timedelta(minutes=30)
 
         # ------------------------------------------------------------
         # Find the real vessel from the EXISTING vessel list.
@@ -417,6 +414,7 @@ class DemoVesselEvidenceService:
         )
 
         real_positions = []
+        attrib_positions = []
         vessel_metadata = None
 
         if real_vessel_id:
@@ -426,7 +424,25 @@ class DemoVesselEvidenceService:
                 origin_longitude,
             )
 
-            # PostgreSQL AIS only.
+            # 1. Fetch positions within attribution verification window (±2h release window)
+            attrib_positions = (
+                await self.ais_repository
+                .get_positions_for_vessel(
+                    db=db,
+                    vessel_id=real_vessel_id,
+                    start_time=attrib_start,
+                    end_time=attrib_end,
+                    synthetic_only=True,
+                    scenario_id=getattr(real_vessel, "scenario_id", None),
+                    corridor_origin=corridor_center,
+                    max_corridor_radius_km=120.0,
+                )
+            )
+
+            # 2. Fetch positions across full detection/attribution voyage window
+            duration_hours = (end_time - start_time).total_seconds() / 3600.0
+            dynamic_corridor_km = min(600.0, max(150.0, 120.0 + duration_hours * 25.0))
+
             real_positions = (
                 await self.ais_repository
                 .get_positions_for_vessel(
@@ -437,7 +453,7 @@ class DemoVesselEvidenceService:
                     synthetic_only=True,
                     scenario_id=getattr(real_vessel, "scenario_id", None),
                     corridor_origin=corridor_center,
-                    max_corridor_radius_km=120.0,
+                    max_corridor_radius_km=dynamic_corridor_km,
                 )
             )
 
@@ -452,45 +468,43 @@ class DemoVesselEvidenceService:
         # TWO different AIS reference points
         # ------------------------------------------------------------
 
-        # 1. Spatially closest AIS point to backtrack origin.
-        #
-        # This is used as the culprit/source-area evidence point.
         nearest_origin_position = None
         origin_distance = None
 
-        if real_positions:
+        verify_positions = attrib_positions if attrib_positions else real_positions
+
+        # 1. Spatially closest AIS point to backtrack origin (CPA within release window).
+        if verify_positions:
             (
                 nearest_origin_position,
                 origin_distance,
             ) = self._find_nearest_to_origin(
-                real_positions,
+                verify_positions,
                 origin_latitude,
                 origin_longitude,
             )
 
         # 2. Temporally closest AIS point to release time.
-        #
-        # This is kept separately so the frontend can expose/debug
-        # the discrepancy in the synthetic AIS data.
         timestamp_nearest_position = (
             self._find_nearest_to_release_time(
-                real_positions,
+                verify_positions,
                 release_time,
             )
-            if real_positions
+            if verify_positions
             else None
         )
 
         # ------------------------------------------------------------
-        # Five-point real trajectory
+        # Full voyage trajectory sampled at clean 30-minute intervals
+        # (:00 and :30), matching mock vessel temporal coverage
         # ------------------------------------------------------------
 
         real_display_trajectory = (
-            self._select_five_real_trajectory_points(
-                real_positions,
-                release_time,
+            MaritimeKinematicSimulator.sample_real_trajectory(
+                real_positions if real_positions else attrib_positions,
+                times,
             )
-            if real_positions
+            if (real_positions or attrib_positions)
             else []
         )
 
@@ -560,7 +574,7 @@ class DemoVesselEvidenceService:
 
                 vessel_data[
                     "full_trajectory_point_count"
-                ] = len(real_positions)
+                ] = len(real_display_trajectory)
 
                 vessel_data[
                     "country"
@@ -609,6 +623,7 @@ class DemoVesselEvidenceService:
                     heading=vessel_data.get("heading"),
                     backtrack_origin=backtrack_origin,
                     mock_vessel=mock_vessel,
+                    detected_at=detected_at,
                 )
             )
 
@@ -636,7 +651,15 @@ class DemoVesselEvidenceService:
 
             vessel_data[
                 "full_trajectory_point_count"
-            ] = 5
+            ] = len(mock_trajectory)
+
+            if culprit_location:
+                vessel_data["speed"] = culprit_location.get("speed")
+                vessel_data["course"] = culprit_location.get("course")
+                vessel_data["heading"] = culprit_location.get("heading")
+            vessel_data["time_difference_hours"] = getattr(
+                mock_vessel, "time_difference_hours", None
+            )
 
             result_vessels.append(
                 vessel_data
@@ -747,7 +770,7 @@ class DemoVesselEvidenceService:
                 ),
 
                 "ais_points_in_window": len(
-                    real_positions
+                    attrib_positions if attrib_positions else real_positions
                 ),
 
                 "display_trajectory_points": (
