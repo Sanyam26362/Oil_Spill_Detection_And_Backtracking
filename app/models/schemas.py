@@ -6,55 +6,6 @@ from datetime import datetime
 # ============================================================
 # ML INGESTION SCHEMAS
 # ============================================================
-class DemoVesselEvidencePoint(BaseModel):
-    timestamp: datetime
-    latitude: float
-    longitude: float
-    speed: Optional[float] = None
-    course: Optional[float] = None
-    heading: Optional[float] = None
-
-
-class DemoVesselEvidence(BaseModel):
-    vessel_id: str
-    is_mock: bool
-    rank: int
-    score: Optional[float] = None
-
-    vessel_name: Optional[str] = None
-    mmsi: Optional[str] = None
-    imo: Optional[str] = None
-
-    country: Optional[str] = None
-    vessel_type: Optional[str] = None
-
-    culprit_location: Optional[
-        DemoVesselEvidencePoint
-    ] = None
-
-    distance_from_backtrack_origin_km: Optional[
-        float
-    ] = None
-
-    full_trajectory_point_count: int = 0
-
-    trajectory: List[
-        DemoVesselEvidencePoint
-    ] = Field(default_factory=list)
-
-
-class DemoAttributionTrajectoryResponse(BaseModel):
-    spill_id: str
-
-    backtrack_origin: dict
-
-    verification: dict
-
-    attribution: dict
-
-    vessels: List[
-        DemoVesselEvidence
-    ]
 class CentroidSchema(BaseModel):
     lon: float
     lat: float
@@ -158,7 +109,8 @@ class DemoSpillDetail(BaseModel):
 class DemoSpillVessel(BaseModel):
     vessel_id: str
     is_mock: bool
-    rank: int
+    is_mock_comparison: Optional[bool] = False
+    rank: Optional[int] = None
     score: Optional[float] = None
     vessel_name: Optional[str] = None
     mmsi: Optional[str] = None
@@ -197,7 +149,8 @@ class DemoVesselEvidencePoint(BaseModel):
 class DemoVesselEvidence(BaseModel):
     vessel_id: str
     is_mock: bool
-    rank: int
+    is_mock_comparison: Optional[bool] = False
+    rank: Optional[int] = None
     score: Optional[float] = None
 
     vessel_name: Optional[str] = None
@@ -214,6 +167,14 @@ class DemoVesselEvidence(BaseModel):
     distance_from_backtrack_origin_km: Optional[
         float
     ] = None
+    distance_to_origin_km: Optional[float] = None
+
+    full_trajectory_point_count: Optional[int] = 0
+    trajectory_correlation: Optional[float] = None
+    speed: Optional[float] = None
+    course: Optional[float] = None
+    heading: Optional[float] = None
+    time_difference_hours: Optional[float] = None
 
     trajectory: List[
         DemoVesselEvidencePoint

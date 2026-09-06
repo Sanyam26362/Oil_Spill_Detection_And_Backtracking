@@ -104,3 +104,14 @@ class SpillCatalogService:
     def get_spill(cls, spill_id: str) -> Dict[str, Any]:
         """Return a single spill by ID, or None if not found."""
         return cls._spills.get(spill_id)
+
+    @classmethod
+    def update_spill_attribution(
+        cls, spill_id: str, top_vessel: str, top_score: float | None, candidate_count: int
+    ) -> None:
+        """Update in-memory catalog entry so /vessels and /trajectory match live attribution."""
+        if spill_id in cls._spills:
+            cls._spills[spill_id]["ranked_top_vessel"] = top_vessel
+            cls._spills[spill_id]["ranked_top_score"] = top_score
+            cls._spills[spill_id]["candidate_count"] = candidate_count
+

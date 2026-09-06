@@ -89,13 +89,27 @@ def extract_vessel_seed(vessel_id: Optional[str]) -> int:
 
 class MockVesselService:
     @staticmethod
-    def get_mock_vessels(base_vessel_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_mock_vessels(
+        base_vessel_id: Optional[Any] = None,
+        real_vessel: Optional[Any] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Return exactly 3 deterministically generated mock vessels.
         Names and IDs match the synthetic vessel naming scheme (e.g. SYNTH-Y2019-000145).
         These are strictly for UI demonstration and frontend testing purposes.
         They must NEVER be processed as real candidates or affect scoring.
         """
+        if base_vessel_id is not None and not isinstance(base_vessel_id, str):
+            real_vessel = base_vessel_id
+            base_vessel_id = getattr(real_vessel, "vessel_id", None) or (
+                real_vessel.get("vessel_id") if isinstance(real_vessel, dict) else None
+            )
+
+        if base_vessel_id is None and real_vessel is not None:
+            base_vessel_id = getattr(real_vessel, "vessel_id", None) or (
+                real_vessel.get("vessel_id") if isinstance(real_vessel, dict) else None
+            )
+
         match = re.match(r"^(.*?)-(\d+)$", base_vessel_id or "")
         if match:
             prefix = match.group(1)
@@ -110,62 +124,77 @@ class MockVesselService:
         id_2 = f"{prefix}-{base_num + 2:0{num_digits}d}"
         id_3 = f"{prefix}-{base_num + 3:0{num_digits}d}"
 
+        # Base mock distances around the real candidate distance
+        base_dist = None
+        if real_vessel is not None:
+            base_dist = getattr(real_vessel, "distance_to_origin_km", None)
+            if base_dist is None and isinstance(real_vessel, dict):
+                base_dist = real_vessel.get("distance_to_origin_km")
+        base_dist = base_dist or 15.0
+
+        dist_1 = round(base_dist + ((-1) ** 1 * (1 * 0.7)), 2)
+        dist_2 = round(base_dist + ((-1) ** 2 * (2 * 0.7)), 2)
+        dist_3 = round(base_dist + ((-1) ** 3 * (3 * 0.7)), 2)
+
         return [
             {
                 "vessel_id": id_1,
                 "is_mock": True,
-                "rank": 2,
+                "is_mock_comparison": True,
+                "rank": None,
                 "score": None,
                 "vessel_name": id_1,
-                "country": "Liberia",
+                "country": "LR",
                 "shiptype": 70,
                 "shiptype_name": "Cargo, all ships of this type",
                 "vessel_type": "Cargo",
-                "mmsi": generate_valid_mmsi("Liberia", base_num, offset=1),
+                "mmsi": generate_valid_mmsi("LR", base_num, offset=1),
                 "imo": generate_valid_imo(base_num, offset=1),
                 "speed": 12.5,
                 "course": 208.5,
                 "heading": 208.0,
-                "distance_to_origin_km": 12.5,
+                "distance_to_origin_km": dist_1,
                 "time_difference_hours": 1.2,
-                "trajectory_correlation": 0.45
+                "trajectory_correlation": None
             },
             {
                 "vessel_id": id_2,
                 "is_mock": True,
-                "rank": 3,
+                "is_mock_comparison": True,
+                "rank": None,
                 "score": None,
                 "vessel_name": id_2,
-                "country": "Malta",
+                "country": "MT",
                 "shiptype": 80,
                 "shiptype_name": "Tanker, all ships of this type",
                 "vessel_type": "Tanker",
-                "mmsi": generate_valid_mmsi("Malta", base_num, offset=2),
+                "mmsi": generate_valid_mmsi("MT", base_num, offset=2),
                 "imo": generate_valid_imo(base_num, offset=2),
                 "speed": 10.8,
                 "course": 195.2,
                 "heading": 195.0,
-                "distance_to_origin_km": 15.3,
+                "distance_to_origin_km": dist_2,
                 "time_difference_hours": 2.5,
-                "trajectory_correlation": 0.32
+                "trajectory_correlation": None
             },
             {
                 "vessel_id": id_3,
                 "is_mock": True,
-                "rank": 4,
+                "is_mock_comparison": True,
+                "rank": None,
                 "score": None,
                 "vessel_name": id_3,
-                "country": "Greece",
+                "country": "GR",
                 "shiptype": 30,
                 "shiptype_name": "Fishing",
                 "vessel_type": "Fishing",
-                "mmsi": generate_valid_mmsi("Greece", base_num, offset=3),
+                "mmsi": generate_valid_mmsi("GR", base_num, offset=3),
                 "imo": generate_valid_imo(base_num, offset=3),
                 "speed": 8.2,
                 "course": 182.1,
                 "heading": 182.0,
-                "distance_to_origin_km": 19.8,
+                "distance_to_origin_km": dist_3,
                 "time_difference_hours": -1.1,
-                "trajectory_correlation": 0.21
+                "trajectory_correlation": None
             }
         ]

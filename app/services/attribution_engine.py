@@ -141,7 +141,7 @@ class AttributionEngine:
         search_radius_km = max(
             source_estimate.radius_km
             + candidate_radius_margin_km,
-            1.0,
+            30.0,
         )
 
         search_start = (

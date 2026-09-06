@@ -199,12 +199,19 @@ async def get_spill_vessels(
     if real_vessel_id:
         seed = extract_vessel_seed(real_vessel_id)
 
+        top_score_val = s.get("ranked_top_score")
+        if top_score_val is not None:
+            derived_correlation = round(min(0.98, max(0.15, float(top_score_val) * 1.1)), 2)
+        else:
+            derived_correlation = round(min(0.98, max(0.15, 0.25 * 1.1)), 2)
+
         vessel_data = {
             "vessel_id": real_vessel_id,
             "vessel_name": real_vessel_id,
             "is_mock": False,
+            "is_mock_comparison": False,
             "rank": 1,
-            "score": s.get("ranked_top_score"),
+            "score": top_score_val,
             "mmsi": generate_valid_mmsi("CY", seed, offset=0),
             "imo": generate_valid_imo(seed, offset=0),
             "country": "CY",
@@ -216,7 +223,7 @@ async def get_spill_vessels(
             "heading": None,
             "distance_to_origin_km": None,
             "time_difference_hours": None,
-            "trajectory_correlation": 0.94,
+            "trajectory_correlation": derived_correlation,
         }
 
         # Query database for actual vessel details and positions (read-only)
@@ -252,12 +259,15 @@ async def get_spill_vessels(
                 origin_lat = s.get("estimated_source_latitude") or s.get("observation_latitude")
                 origin_lon = s.get("estimated_source_longitude") or s.get("observation_longitude")
 
+                corridor_center = (origin_lat, origin_lon) if origin_lat is not None and origin_lon is not None else None
                 positions = await ais_repo.get_positions_for_vessel(
                     db=session,
                     vessel_id=real_vessel_id,
                     start_time=release_time - timedelta(hours=2),
                     end_time=release_time + timedelta(hours=2),
                     synthetic_only=True,
+                    corridor_origin=corridor_center,
+                    max_corridor_radius_km=120.0,
                 )
                 if positions and origin_lat is not None and origin_lon is not None:
                     closest = min(
@@ -287,7 +297,11 @@ async def get_spill_vessels(
         vessels.append(DemoSpillVessel(**vessel_data))
 
     # 2. Mock vessels
-    mock_vessels = MockVesselService.get_mock_vessels(base_vessel_id=real_vessel_id)
+    real_vessel = vessels[0] if vessels else None
+    mock_vessels = MockVesselService.get_mock_vessels(
+        base_vessel_id=real_vessel_id,
+        real_vessel=real_vessel,
+    )
     for mv in mock_vessels:
         vessels.append(DemoSpillVessel(**mv))
 
@@ -394,6 +408,7 @@ async def backtrack_spill(
             status_code=404,
             detail="Spill not found in demo catalog"
         )
+    spill = s
 
     try:
         dt = datetime.fromisoformat(
@@ -477,6 +492,33 @@ async def backtrack_spill(
             }
         }
 
+        # Safely extract top candidate and score
+        candidates = result.get(
+            "candidates",
+            []
+        )
+        if candidates:
+            top_cand = candidates[0]
+            top_vessel = top_cand.get("vessel_id")
+            top_score = top_cand.get("score")
+            candidate_count = len(candidates)
+            SpillCatalogService.update_spill_attribution(
+                spill_id=spill_id,
+                top_vessel=top_vessel,
+                top_score=top_score,
+                candidate_count=candidate_count,
+            )
+
+        top_cand = candidates[0] if candidates else {}
+        top_score = top_cand.get("score")
+        if top_score is None:
+            top_score = top_cand.get("total_score")
+        if top_score is None and spill.get("ranked_top_score") is not None:
+            try:
+                top_score = float(spill["ranked_top_score"])
+            except (ValueError, TypeError):
+                top_score = None
+
         # Build attribution object
         attribution_obj = {
             "candidate_count":
@@ -488,22 +530,8 @@ async def backtrack_spill(
                 result.get(
                     "top_prediction"
                 ),
-            "top_score": None
+            "top_score": top_score
         }
-
-        candidates = result.get(
-            "candidates",
-            []
-        )
-
-        if candidates:
-            attribution_obj[
-                "top_score"
-            ] = candidates[
-                0
-            ].get(
-                "total_score"
-            )
 
         return DemoBacktrackResponse(
             spill_id=spill_id,

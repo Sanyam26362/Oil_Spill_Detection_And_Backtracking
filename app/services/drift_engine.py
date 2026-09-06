@@ -303,6 +303,81 @@ class DriftEngine:
                 )
             )
 
+        # ----------------------------------------------------------
+        # Remainder step
+        #
+        # If duration_hours has a fractional part (e.g. 40.1 h =
+        # 40 h 6 min), the integer division above silently drops the
+        # residual.  We execute one final partial step so the
+        # trajectory endpoint aligns with the hindcast source centroid.
+        # ----------------------------------------------------------
+
+        total_duration_seconds = duration_hours * 3600.0
+        abs_timestep = abs(timestep_seconds)
+        remainder_seconds = total_duration_seconds % abs_timestep
+
+        if remainder_seconds > 1.0:  # guard against floating-point noise
+            remainder_dt = remainder_seconds * time_multiplier
+
+            new_latitude, new_longitude = self.move_particle(
+                latitude=latitude,
+                longitude=longitude,
+                u=drift_u,
+                v=drift_v,
+                seconds=remainder_dt,
+            )
+
+            new_timestamp = timestamp + timedelta(seconds=remainder_dt)
+
+            latitude = new_latitude
+            longitude = new_longitude
+            timestamp = new_timestamp
+
+            environment = self.weather_service.get_velocity(
+                latitude=latitude,
+                longitude=longitude,
+                timestamp=timestamp,
+            )
+
+            remainder_values = (
+                environment.wind_u,
+                environment.wind_v,
+                environment.current_u,
+                environment.current_v,
+            )
+
+            if not any(np.isnan(v) for v in remainder_values):
+                drift_u = (
+                    environment.current_u
+                    + self.windage * environment.wind_u
+                )
+                drift_v = (
+                    environment.current_v
+                    + self.windage * environment.wind_v
+                )
+                states.append(
+                    ParticleState(
+                        timestamp=timestamp,
+                        latitude=latitude,
+                        longitude=longitude,
+                        wind_u=environment.wind_u,
+                        wind_v=environment.wind_v,
+                        current_u=environment.current_u,
+                        current_v=environment.current_v,
+                        drift_u=drift_u,
+                        drift_v=drift_v,
+                    )
+                )
+            else:
+                logger.warning(
+                    "Remainder step skipped: "
+                    "environmental data unavailable at "
+                    "lat=%f lon=%f time=%s",
+                    latitude,
+                    longitude,
+                    timestamp,
+                )
+
         return DriftTrajectory(states=states)
 
     def _track_ensemble(
@@ -423,6 +498,76 @@ class DriftEngine:
                             wind_v=float(wind_v_new[i]),
                             current_u=float(curr_u_new[i]),
                             current_v=float(curr_v_new[i]),
+                            drift_u=float(d_u),
+                            drift_v=float(d_v),
+                        )
+                    )
+
+        # ----------------------------------------------------------
+        # Ensemble remainder step
+        #
+        # Mirrors the scalar _track() remainder logic.  Ensures all
+        # active particles reach the full integration duration even
+        # when duration_hours has a fractional part.
+        # ----------------------------------------------------------
+
+        total_duration_seconds = duration_hours * 3600.0
+        abs_timestep = abs(timestep_seconds)
+        remainder_seconds = total_duration_seconds % abs_timestep
+
+        if remainder_seconds > 1.0 and np.any(active):
+            remainder_dt = remainder_seconds * time_multiplier
+            active_idx = np.where(active)[0]
+
+            new_lats, new_lons = self.move_particles(
+                latitudes=lats[active_idx],
+                longitudes=lons[active_idx],
+                u=drift_u[active_idx],
+                v=drift_v[active_idx],
+                seconds=remainder_dt,
+            )
+
+            lats[active_idx] = new_lats
+            lons[active_idx] = new_lons
+
+            timestamp = timestamp + timedelta(seconds=remainder_dt)
+
+            wind_u_r, wind_v_r, curr_u_r, curr_v_r = self.weather_service.get_velocities(
+                latitudes=lats[active_idx],
+                longitudes=lons[active_idx],
+                timestamp=timestamp,
+            )
+
+            rem_valid = (
+                ~np.isnan(wind_u_r)
+                & ~np.isnan(wind_v_r)
+                & ~np.isnan(curr_u_r)
+                & ~np.isnan(curr_v_r)
+            )
+
+            for i, idx in enumerate(active_idx):
+                if not rem_valid[i]:
+                    logger.warning(
+                        "Remainder step skipped for particle %d: "
+                        "environmental data unavailable at lat=%f lon=%f time=%s",
+                        idx, lats[idx], lons[idx], timestamp,
+                    )
+                else:
+                    d_u = curr_u_r[i] + self.windage * wind_u_r[i]
+                    d_v = curr_v_r[i] + self.windage * wind_v_r[i]
+
+                    drift_u[idx] = d_u
+                    drift_v[idx] = d_v
+
+                    history[idx].append(
+                        ParticleState(
+                            timestamp=timestamp,
+                            latitude=float(lats[idx]),
+                            longitude=float(lons[idx]),
+                            wind_u=float(wind_u_r[i]),
+                            wind_v=float(wind_v_r[i]),
+                            current_u=float(curr_u_r[i]),
+                            current_v=float(curr_v_r[i]),
                             drift_u=float(d_u),
                             drift_v=float(d_v),
                         )
