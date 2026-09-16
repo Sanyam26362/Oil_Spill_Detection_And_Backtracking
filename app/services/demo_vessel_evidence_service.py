@@ -43,17 +43,16 @@ class DemoVesselEvidenceService:
 
     @staticmethod
     def _position_to_dict(position: Any) -> dict:
+        lat = float(position.latitude)
+        lon = float(position.longitude)
+        spd = float(position.speed) if position.speed is not None else None
         return {
             "timestamp": DemoVesselEvidenceService._ensure_utc(
                 position.timestamp
             ),
-            "latitude": float(position.latitude),
-            "longitude": float(position.longitude),
-            "speed": (
-                float(position.speed)
-                if position.speed is not None
-                else None
-            ),
+            "latitude": lat,
+            "longitude": lon,
+            "speed": spd,
             "course": (
                 float(position.course)
                 if position.course is not None
@@ -63,6 +62,9 @@ class DemoVesselEvidenceService:
                 float(position.heading)
                 if position.heading is not None
                 else None
+            ),
+            "polygon": MaritimeKinematicSimulator._build_point_polygon(
+                lat, lon, spd
             ),
         }
 

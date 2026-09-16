@@ -43,6 +43,9 @@ class MaritimeKinematicSimulator:
 
     KM_PER_LAT_DEG = 111.139
 
+    # Number of vertices in the uncertainty polygon ring (excluding closing repeat).
+    _POLYGON_VERTICES = 8
+
     @classmethod
     def haversine_km(
         cls,
@@ -63,6 +66,46 @@ class MaritimeKinematicSimulator:
         )
         c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
         return r * c
+
+    @classmethod
+    def _build_point_polygon(
+        cls,
+        latitude: float,
+        longitude: float,
+        speed_knots: Optional[float] = None,
+    ) -> List[List[float]]:
+        """
+        Build a closed GeoJSON ring representing the spatial uncertainty footprint
+        of a vessel at a given position.
+
+        The uncertainty radius (in km) grows with vessel speed — a faster vessel
+        is harder to localise from a single AIS ping.  Radius is floored at
+        0.5 km and capped at 5.0 km.
+
+        Returns a list of [lon, lat] pairs forming a closed ring
+        (first point == last point).
+        """
+        # Uncertainty radius: 0.5 km base + ~0.25 km per knot of speed, max 5 km
+        speed = max(0.0, float(speed_knots)) if speed_knots is not None else 0.0
+        radius_km = min(5.0, max(0.5, 0.5 + speed * 0.25))
+
+        n = cls._POLYGON_VERTICES
+        cos_lat = math.cos(math.radians(latitude))
+        if abs(cos_lat) < 1e-5:
+            cos_lat = 1e-5
+
+        ring: List[List[float]] = []
+        for k in range(n):
+            angle = 2.0 * math.pi * k / n
+            d_lat = (radius_km * math.cos(angle)) / cls.KM_PER_LAT_DEG
+            d_lon = (radius_km * math.sin(angle)) / (cls.KM_PER_LAT_DEG * cos_lat)
+            ring.append(
+                [round(longitude + d_lon, 6), round(latitude + d_lat, 6)]
+            )
+
+        # Close the ring
+        ring.append(ring[0])
+        return ring
 
     @staticmethod
     def _extract_seed(vessel_id: Optional[str]) -> int:
@@ -271,13 +314,17 @@ class MaritimeKinematicSimulator:
         # Assemble clean trajectory payload
         trajectory = []
         for i in range(num_points):
+            pt_lat = round(lats[i], 6)
+            pt_lon = round(lons[i], 6)
+            pt_sog = round(sogs[i], 1)
             trajectory.append({
                 "timestamp": times[i].isoformat().replace("+00:00", "Z"),
-                "latitude": round(lats[i], 6),
-                "longitude": round(lons[i], 6),
-                "speed": round(sogs[i], 1),
+                "latitude": pt_lat,
+                "longitude": pt_lon,
+                "speed": pt_sog,
                 "course": round(cogs[i], 1),
                 "heading": round(heads[i], 1),
+                "polygon": cls._build_point_polygon(pt_lat, pt_lon, pt_sog),
             })
 
         # Culprit location at CPA waypoint
@@ -299,6 +346,7 @@ class MaritimeKinematicSimulator:
             "speed": cpa_point["speed"],
             "course": cpa_point["course"],
             "heading": cpa_point["heading"],
+            "polygon": cpa_point["polygon"],
         }
 
         return trajectory, culprit_location, actual_dist_km
@@ -356,6 +404,7 @@ class MaritimeKinematicSimulator:
                     "speed": round(spd, 2),
                     "course": round(crs, 2),
                     "heading": round(hdg, 2),
+                    "polygon": cls._build_point_polygon(round(lat, 6), round(lon, 6), spd),
                 })
             # If T is after or at the last recorded AIS ping
             elif T >= p_times[-1]:
@@ -379,6 +428,7 @@ class MaritimeKinematicSimulator:
                     "speed": round(spd, 2),
                     "course": round(crs, 2),
                     "heading": round(hdg, 2),
+                    "polygon": cls._build_point_polygon(round(lat, 6), round(lon, 6), spd),
                 })
             # Otherwise T is between recorded pings -> linear interpolation
             else:
@@ -417,6 +467,7 @@ class MaritimeKinematicSimulator:
                     "speed": round(spd, 2),
                     "course": round(crs, 2),
                     "heading": round(hdg, 2),
+                    "polygon": cls._build_point_polygon(round(lat, 6), round(lon, 6), spd),
                 })
 
         return trajectory

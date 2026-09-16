@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import logging
+import math
 
 import numpy as np
 
@@ -656,6 +657,7 @@ class DriftEngine:
             timestep_minutes=timestep_minutes,
             direction="backward",
         )
+
     @staticmethod
     def _offset_position(
         latitude: float,

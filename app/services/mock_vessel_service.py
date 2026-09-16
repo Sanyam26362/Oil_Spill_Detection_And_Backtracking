@@ -1,4 +1,5 @@
 import hashlib
+import math
 import re
 from typing import List, Dict, Any, Optional
 
@@ -87,6 +88,148 @@ def extract_vessel_seed(vessel_id: Optional[str]) -> int:
     return int(hashlib.md5(vessel_id.encode()).hexdigest()[:6], 16) % 100000
 
 
+class ForensicSubScoreCalculator:
+    """
+    Pure, stateless forensic sub-score estimator for use in the /vessels
+    endpoint where full AIS trajectory data is not available.
+
+    All formulas mirror those in ScoringEngine so that sub-scores are
+    mathematically consistent with how the real culprit is evaluated.
+    Sub-scores are bounded to [0.0, 1.0] and rounded to 4 decimal places.
+
+    NOTE: This class NEVER touches the database, ranking logic, or any
+    attribution algorithm. It only derives display scores from attributes
+    that are already present in the vessel dict.
+    """
+
+    # Vessel-type baseline cruising speeds (knots) matching the
+    # kinematic profiles in MaritimeKinematicSimulator.
+    _BASELINE_SPEEDS: Dict[str, float] = {
+        "cargo": 14.2,
+        "tanker": 11.8,
+        "fishing": 6.5,
+        "passenger": 13.0,
+    }
+
+    @staticmethod
+    def _clamp(value: float) -> float:
+        return round(max(0.0, min(1.0, value)), 4)
+
+    @classmethod
+    def _baseline_speed(cls, vessel_type: Optional[str]) -> float:
+        key = (vessel_type or "").strip().lower()
+        for k, v in cls._BASELINE_SPEEDS.items():
+            if k in key:
+                return v
+        return 13.0  # generic merchant
+
+    @classmethod
+    def compute(
+        cls,
+        distance_to_origin_km: Optional[float],
+        time_difference_hours: Optional[float],
+        speed: Optional[float],
+        vessel_type: Optional[str],
+        *,
+        # Optional hints that shift loiter/approach/departure for realism
+        mock_index: int = 0,
+    ) -> Dict[str, float]:
+        """
+        Return a dict with the 6 sub-scores and the weighted `score`.
+
+        Parameters
+        ----------
+        distance_to_origin_km
+            CPA distance from the estimated spill source (km).
+        time_difference_hours
+            Signed time delta between the vessel's CPA and the estimated
+            release time (hours).  Negative = vessel arrived before release.
+        speed
+            Speed of the vessel at its CPA (knots).
+        vessel_type
+            String vessel category used to derive a baseline cruising speed.
+        mock_index
+            0-based index of the mock vessel (0, 1, 2).  Used to add small
+            deterministic perturbations so vessels 2-4 look realistically
+            distinct from each other.
+        """
+        dist_km = float(distance_to_origin_km or 15.0)
+        td_h = float(time_difference_hours if time_difference_hours is not None else 1.5)
+        spd = float(speed or 0.0)
+        baseline = cls._baseline_speed(vessel_type)
+
+        # ------------------------------------------------------------------
+        # 1. PROXIMITY  –  mirrors: clip(1 - dist / 5, 0, 1)
+        #    Real engine uses a 5 km radius; mock vessels sit 10-25 km away
+        #    so we scale by 30 km instead so scores spread nicely.
+        # ------------------------------------------------------------------
+        proximity_score = cls._clamp(1.0 - dist_km / 30.0)
+
+        # ------------------------------------------------------------------
+        # 2. TEMPORAL  –  mirrors: clip(1 - |td_min| / 120, 0, 1)
+        # ------------------------------------------------------------------
+        td_min = abs(td_h) * 60.0
+        temporal_score = cls._clamp(1.0 - td_min / 120.0)
+
+        # ------------------------------------------------------------------
+        # 3. SLOWDOWN  –  mirrors: clip((baseline - event) / baseline, 0, 1)
+        # ------------------------------------------------------------------
+        if baseline <= 0.1:
+            slowdown_score = 0.0
+        else:
+            slowdown_score = cls._clamp((baseline - spd) / baseline)
+
+        # ------------------------------------------------------------------
+        # 4. LOITER  –  estimated from inverse proximity:
+        #    vessels very close to the origin are more likely to have loitered.
+        #    Small deterministic perturbation per mock_index for realism.
+        # ------------------------------------------------------------------
+        loiter_base = cls._clamp(1.0 - dist_km / 20.0)
+        loiter_score = cls._clamp(
+            loiter_base - mock_index * 0.07
+        )
+
+        # ------------------------------------------------------------------
+        # 5. APPROACH  –  proportion of pre-event steps where distance
+        #    decreased.  Estimated: vessels with low td (arriving close to
+        #    release) have a higher approach score.
+        # ------------------------------------------------------------------
+        approach_score = cls._clamp(
+            max(0.0, 1.0 - abs(td_h) / 3.0) - mock_index * 0.05
+        )
+
+        # ------------------------------------------------------------------
+        # 6. DEPARTURE  –  symmetric to approach but for post-event window.
+        # ------------------------------------------------------------------
+        departure_score = cls._clamp(
+            max(0.0, 1.0 - dist_km / 25.0) - mock_index * 0.05
+        )
+
+        # ------------------------------------------------------------------
+        # WEIGHTED TOTAL  –  identical weights as ScoringEngine:
+        #   0.25 proximity + 0.15 temporal + 0.20 slowdown +
+        #   0.15 loiter   + 0.125 approach + 0.125 departure
+        # ------------------------------------------------------------------
+        total = (
+            0.25 * proximity_score
+            + 0.15 * temporal_score
+            + 0.20 * slowdown_score
+            + 0.15 * loiter_score
+            + 0.125 * approach_score
+            + 0.125 * departure_score
+        )
+
+        return {
+            "score": round(float(total), 4),
+            "proximity_score": proximity_score,
+            "temporal_score": temporal_score,
+            "slowdown_score": slowdown_score,
+            "loiter_score": loiter_score,
+            "approach_score": approach_score,
+            "departure_score": departure_score,
+        }
+
+
 class MockVesselService:
     @staticmethod
     def get_mock_vessels(
@@ -142,8 +285,7 @@ class MockVesselService:
                 "vessel_id": id_1,
                 "is_mock": True,
                 "is_mock_comparison": True,
-                "rank": None,
-                "score": None,
+                "rank": 2,
                 "vessel_name": id_1,
                 "country": "LR",
                 "shiptype": 70,
@@ -156,14 +298,20 @@ class MockVesselService:
                 "heading": 212.0,
                 "distance_to_origin_km": dist_1,
                 "time_difference_hours": 1.2,
-                "trajectory_correlation": None
+                "trajectory_correlation": None,
+                **ForensicSubScoreCalculator.compute(
+                    distance_to_origin_km=dist_1,
+                    time_difference_hours=1.2,
+                    speed=13.4,
+                    vessel_type="Cargo",
+                    mock_index=0,
+                ),
             },
             {
                 "vessel_id": id_2,
                 "is_mock": True,
                 "is_mock_comparison": True,
-                "rank": None,
-                "score": None,
+                "rank": 3,
                 "vessel_name": id_2,
                 "country": "MT",
                 "shiptype": 80,
@@ -176,14 +324,20 @@ class MockVesselService:
                 "heading": 196.5,
                 "distance_to_origin_km": dist_2,
                 "time_difference_hours": 2.5,
-                "trajectory_correlation": None
+                "trajectory_correlation": None,
+                **ForensicSubScoreCalculator.compute(
+                    distance_to_origin_km=dist_2,
+                    time_difference_hours=2.5,
+                    speed=11.2,
+                    vessel_type="Tanker",
+                    mock_index=1,
+                ),
             },
             {
                 "vessel_id": id_3,
                 "is_mock": True,
                 "is_mock_comparison": True,
-                "rank": None,
-                "score": None,
+                "rank": 4,
                 "vessel_name": id_3,
                 "country": "GR",
                 "shiptype": 30,
@@ -196,6 +350,13 @@ class MockVesselService:
                 "heading": 184.5,
                 "distance_to_origin_km": dist_3,
                 "time_difference_hours": -1.1,
-                "trajectory_correlation": None
-            }
+                "trajectory_correlation": None,
+                **ForensicSubScoreCalculator.compute(
+                    distance_to_origin_km=dist_3,
+                    time_difference_hours=-1.1,
+                    speed=6.8,
+                    vessel_type="Fishing",
+                    mock_index=2,
+                ),
+            },
         ]

@@ -1,4 +1,4 @@
-from pydantic import BaseModel,Field
+from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
 
@@ -112,6 +112,28 @@ class DemoSpillVessel(BaseModel):
     is_mock_comparison: Optional[bool] = False
     rank: Optional[int] = None
     score: Optional[float] = None
+
+    # Forensic sub-score breakdown (0.0 – 1.0 each, 4 decimal places)
+    proximity_score: Optional[float] = Field(
+        None, description="Spatial proximity score (0-1)"
+    )
+    temporal_score: Optional[float] = Field(
+        None, description="Time-alignment score (0-1)"
+    )
+    slowdown_score: Optional[float] = Field(
+        None, description="Speed anomaly / slowdown score (0-1)"
+    )
+    loiter_score: Optional[float] = Field(
+        None, description="Loitering anomaly score (0-1)"
+    )
+    approach_score: Optional[float] = Field(
+        None, description="Approach trajectory alignment (0-1)"
+    )
+    departure_score: Optional[float] = Field(
+        None, description="Departure trajectory alignment (0-1)"
+    )
+
+    # Existing metadata & trajectory fields
     vessel_name: Optional[str] = None
     mmsi: Optional[str] = None
     imo: Optional[str] = None
@@ -137,6 +159,7 @@ class DemoBacktrackResponse(BaseModel):
     backtrack: dict
     attribution: dict
 
+
 class DemoVesselEvidencePoint(BaseModel):
     timestamp: datetime
     latitude: float
@@ -144,6 +167,13 @@ class DemoVesselEvidencePoint(BaseModel):
     speed: Optional[float] = None
     course: Optional[float] = None
     heading: Optional[float] = None
+    polygon: Optional[List[List[float]]] = Field(
+        default_factory=list,
+        description=(
+            "Closed polygon ring [[lon, lat], ...] representing the vessel's "
+            "spatial uncertainty or footprint at this point in time"
+        ),
+    )
 
 
 class DemoVesselEvidence(BaseModel):
@@ -193,3 +223,33 @@ class DemoAttributionTrajectoryResponse(BaseModel):
     vessels: List[
         DemoVesselEvidence
     ]
+
+
+# ============================================================
+# FORWARD PREDICTION SCHEMAS
+# ============================================================
+
+class PredictedPosition(BaseModel):
+    latitude: float
+    longitude: float
+    timestamp: datetime
+
+
+class PredictionTrajectoryPoint(BaseModel):
+    timestamp: datetime
+    latitude: float
+    longitude: float
+    drift_speed_knots: Optional[float] = None
+    drift_heading_deg: Optional[float] = None
+    distance_from_start_km: Optional[float] = None
+
+
+class SpillPredictionResponse(BaseModel):
+    spill_id: str
+    forecast_hours: float
+    initial_position: PredictedPosition
+    predicted_position: PredictedPosition
+    total_displacement_km: float
+    net_heading_deg: float
+    average_speed_knots: float
+    trajectory: List[PredictionTrajectoryPoint]
