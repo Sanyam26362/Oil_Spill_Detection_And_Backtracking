@@ -5,6 +5,8 @@ import math
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
