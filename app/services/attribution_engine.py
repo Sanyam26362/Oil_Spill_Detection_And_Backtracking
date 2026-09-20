@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.ais_repository import AISRepository
@@ -83,7 +84,12 @@ class AttributionEngine:
         # ==========================================================
         # 0. ELIGIBILITY FILTER
         # ==========================================================
-        
+
+        # A2: Normalise naive observation_time to UTC so all downstream
+        # comparisons against tz-aware datetimes do not raise TypeError.
+        if observation_time.tzinfo is None:
+            observation_time = observation_time.replace(tzinfo=timezone.utc)
+
         estimated_release_time = (
             observation_time
             - timedelta(
@@ -119,17 +125,18 @@ class AttributionEngine:
         # 1. HINDCAST
         # ==========================================================
 
-        source_estimate = (
-            self.hindcast_service.backward_ensemble(
-                obs_latitude=observation_latitude,
-                obs_longitude=observation_longitude,
-                obs_time=observation_time,
-                duration_hours=drift_duration_hours,
-                ensemble_size=ensemble_size,
-                initial_radius_m=initial_radius_m,
-                timestep_minutes=timestep_minutes,
-                random_seed=42,
-            )
+        # D3: Wrap blocking physics in threadpool so async event loop
+        # is not blocked by NetCDF I/O and particle tracking.
+        source_estimate = await run_in_threadpool(
+            self.hindcast_service.backward_ensemble,
+            obs_latitude=observation_latitude,
+            obs_longitude=observation_longitude,
+            obs_time=observation_time,
+            duration_hours=drift_duration_hours,
+            ensemble_size=ensemble_size,
+            initial_radius_m=initial_radius_m,
+            timestep_minutes=timestep_minutes,
+            random_seed=42,
         )
 
 
@@ -151,12 +158,8 @@ class AttributionEngine:
             )
         )
 
-        search_end = (
-            estimated_release_time
-            + timedelta(
-                hours=candidate_time_window_hours
-            )
-        )
+        # B5: search_end was already computed above; redundant second
+        # assignment removed here.
 
         candidate_ids = (
             await self.ais_repository
@@ -193,22 +196,28 @@ class AttributionEngine:
                         source_estimate.radius_km
                     ),
                 },
+                "estimated_release_time": (
+                    estimated_release_time.isoformat()
+                ),
                 "candidate_count": 0,
                 "candidates": [],
+                "top_prediction": None,
             }
 
         # ==========================================================
         # 3. RETRIEVE CANDIDATE TRAJECTORIES
         # ==========================================================
 
+        # B4: Use candidate_time_window_hours instead of hardcoded 2 so
+        # the trajectory window stays in sync with the search window.
         trajectory_start = (
             estimated_release_time
-            - timedelta(hours=2)
+            - timedelta(hours=candidate_time_window_hours)
         )
 
         trajectory_end = (
             estimated_release_time
-            + timedelta(hours=2)
+            + timedelta(hours=candidate_time_window_hours)
         )
 
         positions = (
@@ -259,8 +268,12 @@ class AttributionEngine:
                         source_estimate.radius_km
                     ),
                 },
+                "estimated_release_time": (
+                    estimated_release_time.isoformat()
+                ),
                 "candidate_count": len(candidate_ids),
                 "candidates": [],
+                "top_prediction": None,
             }
 
         trajectory_df["timestamp"] = (
@@ -277,15 +290,25 @@ class AttributionEngine:
             .dt.tz_localize(None)
         )
 
+        # A3: Convert to UTC first so non-UTC-aware inputs don't produce
+        # a skewed naive timestamp. For UTC inputs the result is identical.
+        _release_ts = pd.Timestamp(estimated_release_time)
         estimated_release_time_naive = (
-            pd.Timestamp(
-                estimated_release_time
-            ).tz_localize(None)
+            _release_ts.tz_convert("UTC").tz_localize(None)
+            if _release_ts.tzinfo is not None
+            else _release_ts.tz_localize(None)
         )
 
         # ==========================================================
         # 5. BEHAVIORAL SCORING
         # ==========================================================
+
+        # E2: Build a vessel_id → sub-DataFrame mapping once so that
+        # score_vessel does not re-scan the full DataFrame for every candidate.
+        vessel_groups: dict[str, pd.DataFrame] = {
+            vid: grp
+            for vid, grp in trajectory_df.groupby("vessel_id", sort=False)
+        }
 
         results = []
 
@@ -307,6 +330,7 @@ class AttributionEngine:
                     estimated_release_time=(
                         estimated_release_time_naive
                     ),
+                    vessel_df=vessel_groups.get(vessel_id),
                 )
             )
 

@@ -81,9 +81,10 @@ class AISRepository:
         start_idx = 0
         if corridor_origin is not None:
             origin_lat, origin_lon = corridor_origin
-            # Initial ping must start in the operational corridor basin (<= 120 km)
-            # to reject cross-scenario teleportation spikes before velocity stepping begins.
-            max_init_dist_m = min(max_corridor_radius_km, 120.0) * 1000.0
+            # B3: Use max_corridor_radius_km directly (no 120 km cap) so the
+            # parameter means what the docstring says. All current callers pass
+            # 120.0 so today's output is unchanged. INTENTIONAL BEHAVIOUR CHANGE.
+            max_init_dist_m = max_corridor_radius_km * 1000.0
             while start_idx < len(positions):
                 p = positions[start_idx]
                 dist_m = AISRepository._haversine_distance_m(
@@ -106,7 +107,16 @@ class AISRepository:
             ).total_seconds()
 
             # Identical or backward timestamps → keep (no movement implied).
+            # B2: Apply the same corridor check as the normal branch so
+            # pings outside the operational basin are still rejected.
             if dt_seconds <= 0:
+                if corridor_origin is not None:
+                    origin_lat, origin_lon = corridor_origin
+                    dist_m = AISRepository._haversine_distance_m(
+                        origin_lat, origin_lon, ping.latitude, ping.longitude
+                    )
+                    if dist_m > max_corridor_radius_km * 1000.0:
+                        continue
                 kept.append(ping)
                 continue
 
