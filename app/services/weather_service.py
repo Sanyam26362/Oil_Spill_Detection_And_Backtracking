@@ -739,128 +739,129 @@ class WeatherService:
             timestamp
         )
 
-        self._ensure_datasets_for_timestamp(
-            timestamp
-        )
-
-        assert self.era5 is not None
-        assert self.cmems is not None
-
-        # ----------------------------------------------------------
-        # Check if requested timestamp exceeds current dataset.
-        # ----------------------------------------------------------
-
-        era5_end = np.datetime64(
-            self.era5[self.era5_time].values[-1]
-        )
-
-        cmems_end = np.datetime64(
-            self.cmems[self.cmems_time].values[-1]
-        )
-
-        timestamp64 = np.datetime64(
-            timestamp
-        )
-
-        crosses_boundary = (
-            timestamp64 > era5_end
-            or timestamp64 > cmems_end
-        )
-
-        if crosses_boundary:
-
-            if self._yearly_mode:
-                return self._get_velocity_cross_month(
-                    latitude=latitude,
-                    longitude=longitude,
-                    timestamp=timestamp,
-                )
-
-            raise RuntimeError(
-                "Requested timestamp is outside "
-                "the loaded environmental dataset."
+        with self._lock:
+            self._ensure_datasets_for_timestamp(
+                timestamp
             )
 
-        # ----------------------------------------------------------
-        # Longitude normalization
-        # ----------------------------------------------------------
+            assert self.era5 is not None
+            assert self.cmems is not None
 
-        era5_longitudes = self.era5[
-            self.era5_lon
-        ].values
+            # ----------------------------------------------------------
+            # Check if requested timestamp exceeds current dataset.
+            # ----------------------------------------------------------
 
-        cmems_longitudes = self.cmems[
-            self.cmems_lon
-        ].values
+            era5_end = np.datetime64(
+                self.era5[self.era5_time].values[-1]
+            )
 
-        # E3: Use cached bounds when available; fall back to computing them.
-        era5_lon = self._normalize_longitude(
-            longitude,
-            era5_longitudes,
-            lon_min=self._era5_lon_min,
-            lon_max=self._era5_lon_max,
-        )
+            cmems_end = np.datetime64(
+                self.cmems[self.cmems_time].values[-1]
+            )
 
-        cmems_lon = self._normalize_longitude(
-            longitude,
-            cmems_longitudes,
-            lon_min=self._cmems_lon_min,
-            lon_max=self._cmems_lon_max,
-        )
+            timestamp64 = np.datetime64(
+                timestamp
+            )
+
+            crosses_boundary = (
+                timestamp64 > era5_end
+                or timestamp64 > cmems_end
+            )
+
+            if crosses_boundary:
+
+                if self._yearly_mode:
+                    return self._get_velocity_cross_month(
+                        latitude=latitude,
+                        longitude=longitude,
+                        timestamp=timestamp,
+                    )
+
+                raise RuntimeError(
+                    "Requested timestamp is outside "
+                    "the loaded environmental dataset."
+                )
+
+            # ----------------------------------------------------------
+            # Longitude normalization
+            # ----------------------------------------------------------
+
+            era5_longitudes = self.era5[
+                self.era5_lon
+            ].values
+
+            cmems_longitudes = self.cmems[
+                self.cmems_lon
+            ].values
+
+            # E3: Use cached bounds when available; fall back to computing them.
+            era5_lon = self._normalize_longitude(
+                longitude,
+                era5_longitudes,
+                lon_min=self._era5_lon_min,
+                lon_max=self._era5_lon_max,
+            )
+
+            cmems_lon = self._normalize_longitude(
+                longitude,
+                cmems_longitudes,
+                lon_min=self._cmems_lon_min,
+                lon_max=self._cmems_lon_max,
+            )
 
 
-        # ----------------------------------------------------------
-        # ERA5 interpolation
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # ERA5 interpolation
+            # ----------------------------------------------------------
 
-        era5_point = self.era5.interp(
-            {
-                self.era5_lat: latitude,
-                self.era5_lon: era5_lon,
-                self.era5_time: timestamp64,
-            },
-            method="linear",
-        )
+            era5_point = self.era5.interp(
+                {
+                    self.era5_lat: latitude,
+                    self.era5_lon: era5_lon,
+                    self.era5_time: timestamp64,
+                },
+                method="linear",
+            )
 
-        # ----------------------------------------------------------
-        # CMEMS interpolation
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # CMEMS interpolation
+            # ----------------------------------------------------------
 
-        cmems_point = self.cmems.interp(
-            {
-                self.cmems_lat: latitude,
-                self.cmems_lon: cmems_lon,
-                self.cmems_time: timestamp64,
-            },
-            method="linear",
-        )
+            cmems_point = self.cmems.interp(
+                {
+                    self.cmems_lat: latitude,
+                    self.cmems_lon: cmems_lon,
+                    self.cmems_time: timestamp64,
+                },
+                method="linear",
+            )
 
-        # ----------------------------------------------------------
-        # Values
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # Values
+            # ----------------------------------------------------------
 
-        wind_u = self._value(
-            era5_point[self.era5_u].values
-        )
+            wind_u = self._value(
+                era5_point[self.era5_u].values
+            )
 
-        wind_v = self._value(
-            era5_point[self.era5_v].values
-        )
+            wind_v = self._value(
+                era5_point[self.era5_v].values
+            )
 
-        current_u = self._value(
-            cmems_point[self.cmems_u].values
-        )
+            current_u = self._value(
+                cmems_point[self.cmems_u].values
+            )
 
-        current_v = self._value(
-            cmems_point[self.cmems_v].values
-        )
+            current_v = self._value(
+                cmems_point[self.cmems_v].values
+            )
 
-        return EnvironmentalVelocity(
-            wind_u=wind_u,
-            wind_v=wind_v,
-            current_u=current_u,
-            current_v=current_v,
-        )
+            return EnvironmentalVelocity(
+                wind_u=wind_u,
+                wind_v=wind_v,
+                current_u=current_u,
+                current_v=current_v,
+            )
 
     # ==============================================================
     # VECTORIZED LOOKUP
@@ -919,156 +920,157 @@ class WeatherService:
             timestamp
         )
 
-        self._ensure_datasets_for_timestamp(
-            timestamp_naive
-        )
+        with self._lock:
+            self._ensure_datasets_for_timestamp(
+                timestamp_naive
+            )
 
-        assert self.era5 is not None
-        assert self.cmems is not None
+            assert self.era5 is not None
+            assert self.cmems is not None
 
-        # ----------------------------------------------------------
-        # Current dataset ends
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # Current dataset ends
+            # ----------------------------------------------------------
 
-        era5_end = np.datetime64(
-            self.era5[self.era5_time].values[-1]
-        )
+            era5_end = np.datetime64(
+                self.era5[self.era5_time].values[-1]
+            )
 
-        cmems_end = np.datetime64(
-            self.cmems[self.cmems_time].values[-1]
-        )
+            cmems_end = np.datetime64(
+                self.cmems[self.cmems_time].values[-1]
+            )
 
-        timestamp64 = np.datetime64(
-            timestamp_naive
-        )
+            timestamp64 = np.datetime64(
+                timestamp_naive
+            )
 
-        crosses_boundary = (
-            timestamp64 > era5_end
-            or timestamp64 > cmems_end
-        )
+            crosses_boundary = (
+                timestamp64 > era5_end
+                or timestamp64 > cmems_end
+            )
 
-        # ----------------------------------------------------------
-        # Cross-month vectorized lookup
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # Cross-month vectorized lookup
+            # ----------------------------------------------------------
 
-        if crosses_boundary:
+            if crosses_boundary:
 
-            if not self._yearly_mode:
-                raise RuntimeError(
-                    "Requested timestamp is outside "
-                    "the loaded environmental dataset."
-                )
+                if not self._yearly_mode:
+                    raise RuntimeError(
+                        "Requested timestamp is outside "
+                        "the loaded environmental dataset."
+                    )
 
-            # Vectorized cross-month boundary logic
-            return self._get_velocities_cross_month(lats, lons, timestamp_naive)
+                # Vectorized cross-month boundary logic
+                return self._get_velocities_cross_month(lats, lons, timestamp_naive)
 
-        # ----------------------------------------------------------
-        # Longitude normalization
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # Longitude normalization
+            # ----------------------------------------------------------
 
-        era5_longitudes = self.era5[
-            self.era5_lon
-        ].values
+            era5_longitudes = self.era5[
+                self.era5_lon
+            ].values
 
-        cmems_longitudes = self.cmems[
-            self.cmems_lon
-        ].values
+            cmems_longitudes = self.cmems[
+                self.cmems_lon
+            ].values
 
-        era5_lons = np.asarray(
-            [
-                self._normalize_longitude(
-                    lon,
-                    era5_longitudes,
-                )
-                for lon in lons
-            ],
-            dtype=float,
-        )
+            era5_lons = np.asarray(
+                [
+                    self._normalize_longitude(
+                        lon,
+                        era5_longitudes,
+                    )
+                    for lon in lons
+                ],
+                dtype=float,
+            )
 
-        cmems_lons = np.asarray(
-            [
-                self._normalize_longitude(
-                    lon,
-                    cmems_longitudes,
-                )
-                for lon in lons
-            ],
-            dtype=float,
-        )
+            cmems_lons = np.asarray(
+                [
+                    self._normalize_longitude(
+                        lon,
+                        cmems_longitudes,
+                    )
+                    for lon in lons
+                ],
+                dtype=float,
+            )
 
-        # ----------------------------------------------------------
-        # DataArray point coordinates
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # DataArray point coordinates
+            # ----------------------------------------------------------
 
-        lats_da = xr.DataArray(
-            lats,
-            dims="points",
-        )
+            lats_da = xr.DataArray(
+                lats,
+                dims="points",
+            )
 
-        era5_lons_da = xr.DataArray(
-            era5_lons,
-            dims="points",
-        )
+            era5_lons_da = xr.DataArray(
+                era5_lons,
+                dims="points",
+            )
 
-        cmems_lons_da = xr.DataArray(
-            cmems_lons,
-            dims="points",
-        )
+            cmems_lons_da = xr.DataArray(
+                cmems_lons,
+                dims="points",
+            )
 
-        # ----------------------------------------------------------
-        # ERA5
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # ERA5
+            # ----------------------------------------------------------
 
-        era5_interp_coords = {
-            self.era5_lat: lats_da,
-            self.era5_lon: era5_lons_da,
-            self.era5_time: timestamp64,
-        }
+            era5_interp_coords = {
+                self.era5_lat: lats_da,
+                self.era5_lon: era5_lons_da,
+                self.era5_time: timestamp64,
+            }
 
-        wind_u = np.asarray(
-            self.era5[self.era5_u].interp(
-                era5_interp_coords,
-                method="linear",
-            ).values
-        )
+            wind_u = np.asarray(
+                self.era5[self.era5_u].interp(
+                    era5_interp_coords,
+                    method="linear",
+                ).values
+            )
 
-        wind_v = np.asarray(
-            self.era5[self.era5_v].interp(
-                era5_interp_coords,
-                method="linear",
-            ).values
-        )
+            wind_v = np.asarray(
+                self.era5[self.era5_v].interp(
+                    era5_interp_coords,
+                    method="linear",
+                ).values
+            )
 
-        # ----------------------------------------------------------
-        # CMEMS
-        # ----------------------------------------------------------
+            # ----------------------------------------------------------
+            # CMEMS
+            # ----------------------------------------------------------
 
-        cmems_interp_coords = {
-            self.cmems_lat: lats_da,
-            self.cmems_lon: cmems_lons_da,
-            self.cmems_time: timestamp64,
-        }
+            cmems_interp_coords = {
+                self.cmems_lat: lats_da,
+                self.cmems_lon: cmems_lons_da,
+                self.cmems_time: timestamp64,
+            }
 
-        current_u = np.asarray(
-            self.cmems[self.cmems_u].interp(
-                cmems_interp_coords,
-                method="linear",
-            ).values
-        )
+            current_u = np.asarray(
+                self.cmems[self.cmems_u].interp(
+                    cmems_interp_coords,
+                    method="linear",
+                ).values
+            )
 
-        current_v = np.asarray(
-            self.cmems[self.cmems_v].interp(
-                cmems_interp_coords,
-                method="linear",
-            ).values
-        )
+            current_v = np.asarray(
+                self.cmems[self.cmems_v].interp(
+                    cmems_interp_coords,
+                    method="linear",
+                ).values
+            )
 
-        return (
-            wind_u,
-            wind_v,
-            current_u,
-            current_v,
-        )
+            return (
+                wind_u,
+                wind_v,
+                current_u,
+                current_v,
+            )
 
     # ==============================================================
     # LONGITUDE HANDLING
