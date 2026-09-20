@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,36 +15,12 @@ from app.services.weather_service import WeatherService
 router = APIRouter()
 
 
-_GLOBAL_WEATHER_SERVICE = None
-
-def get_weather_service():
+def get_weather_service(request: Request):
     """
-    Provide a year-aware WeatherService as a singleton.
+    D2: Return the single WeatherService from app.state,
+    created once at application startup.
     """
-    global _GLOBAL_WEATHER_SERVICE
-    if _GLOBAL_WEATHER_SERVICE is None:
-        project_root = Path(
-            __file__
-        ).resolve().parents[2]
-
-        _GLOBAL_WEATHER_SERVICE = WeatherService(
-            weather_yearly_dir=(
-                project_root
-                / "data"
-                / "weather"
-                / "raw"
-                / "yearly"
-            ),
-            ocean_yearly_dir=(
-                project_root
-                / "data"
-                / "ocean"
-                / "raw"
-                / "yearly"
-            ),
-        )
-
-    yield _GLOBAL_WEATHER_SERVICE
+    return request.app.state.weather_service
 
 
 def get_attribution_engine(
@@ -106,8 +81,25 @@ async def attribute_spill(
 
         return result
 
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc

@@ -1,7 +1,11 @@
 import csv
+import itertools
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CSV_PATH = PROJECT_ROOT / "json_output" / "validation" / "detection_attribution_results.csv"
@@ -21,7 +25,10 @@ class SpillCatalogService:
             return
 
         if not CSV_PATH.exists():
-            print(f"Warning: CSV file not found at {CSV_PATH}")
+            # B7: Log instead of print; set _initialized so we don't
+            # re-attempt the missing CSV on every subsequent call.
+            logger.error("Warning: CSV file not found at %s", CSV_PATH)
+            cls._initialized = True
             return
 
         cls._spills = {}
@@ -93,7 +100,8 @@ class SpillCatalogService:
     @classmethod
     def get_all_spills(cls, skip: int = 0, limit: int = 100) -> List[Dict[str, Any]]:
         """Return paginated list of valid spills."""
-        return list(cls._spills.values())[skip : skip + limit]
+        # E6: itertools.islice avoids materialising the whole values list.
+        return list(itertools.islice(cls._spills.values(), skip, skip + limit))
 
     @classmethod
     def get_total_count(cls) -> int:

@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.schemas.visualization import VisualizationResponse
 from app.services.drift_engine import DriftEngine
@@ -14,46 +12,20 @@ from app.services.weather_service import WeatherService
 router = APIRouter()
 
 
-_visualization_weather_service: WeatherService | None = None
-
-
-def get_weather_service():
+def get_weather_service(request: Request):
     """
-    Create the same year-aware WeatherService configuration
-    already used by the existing drift API.
+    D2: Return the single WeatherService from app.state,
+    created once at application startup.
     """
-    global _visualization_weather_service
-
-    if _visualization_weather_service is None:
-        project_root = Path(
-            __file__
-        ).resolve().parents[2]
-
-        _visualization_weather_service = WeatherService(
-            weather_yearly_dir=(
-                project_root
-                / "data"
-                / "weather"
-                / "raw"
-                / "yearly"
-            ),
-            ocean_yearly_dir=(
-                project_root
-                / "data"
-                / "ocean"
-                / "raw"
-                / "yearly"
-            ),
-        )
-
-    return _visualization_weather_service
+    return request.app.state.weather_service
 
 
 def shutdown_weather_service():
-    global _visualization_weather_service
-    if _visualization_weather_service is not None:
-        _visualization_weather_service.close()
-        _visualization_weather_service = None
+    """
+    D2: No-op-safe stub kept for backwards compatibility.
+    The weather service lifecycle is now managed in main.py lifespan.
+    """
+    pass
 
 
 def get_drift_engine(

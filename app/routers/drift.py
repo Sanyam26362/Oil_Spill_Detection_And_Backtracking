@@ -7,7 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from app.services.drift_engine import DriftEngine
@@ -28,33 +29,27 @@ router = APIRouter()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 PLOT_MAP_PATH = PROJECT_ROOT / "json_output" / "validation" / "diagnostic_plot_urls.json"
 
-_plot_urls_cache: dict[str, str] | None = None
+_plot_urls_cache: dict[str, str] = {}
+_plot_cache_mtime: float | None = None
 
 
 def _get_diagnostic_plot_url(spill_id: str) -> str | None:
-    """Retrieve the Cloudinary URL for a spill with in-memory caching and auto-refresh."""
-    global _plot_urls_cache
-    if _plot_urls_cache is None:
-        _plot_urls_cache = {}
-        if PLOT_MAP_PATH.exists():
-            try:
+    """Retrieve the Cloudinary URL for a spill with mtime-based cache invalidation."""
+    global _plot_urls_cache, _plot_cache_mtime
+
+    if PLOT_MAP_PATH.exists():
+        try:
+            current_mtime = PLOT_MAP_PATH.stat().st_mtime
+            # E4: Reload only when the file has changed since last load.
+            if current_mtime != _plot_cache_mtime:
                 with open(PLOT_MAP_PATH, "r", encoding="utf-8") as f:
                     _plot_urls_cache = json.load(f)
-            except Exception:
-                _plot_urls_cache = {}
-
-    url = _plot_urls_cache.get(spill_id)
-
-    # If not found in cache, check disk once in case the JSON was recently updated
-    if not url and PLOT_MAP_PATH.exists():
-        try:
-            with open(PLOT_MAP_PATH, "r", encoding="utf-8") as f:
-                _plot_urls_cache = json.load(f)
-                url = _plot_urls_cache.get(spill_id)
+                _plot_cache_mtime = current_mtime
         except Exception:
             pass
 
-    return url
+    # Cache miss for unknown IDs does NOT hit disk again (already loaded above).
+    return _plot_urls_cache.get(spill_id)
 
 
 # ----------------------------------------------------------------------
@@ -62,54 +57,27 @@ def _get_diagnostic_plot_url(spill_id: str) -> str | None:
 # ----------------------------------------------------------------------
 def _resolve_spill_info(spill_id: str) -> tuple[float, float, datetime]:
     """
-    Search catalog service, database, or local JSON files to retrieve
+    Search catalog service or local JSON files to retrieve
     the observation coordinates and detection time for a given spill_id.
     """
-    # 1. Try SpillCatalogService
+    # A4 Step 1: Use SpillCatalogService.get_spill (classmethod returning dict)
     try:
         from app.services.spill_catalog_service import SpillCatalogService
-        catalog = SpillCatalogService()
-        for method_name in ("get_spill", "get_spill_by_id", "get_spill_detail", "get"):
-            if hasattr(catalog, method_name):
-                try:
-                    spill = getattr(catalog, method_name)(spill_id)
-                    if spill:
-                        lat = getattr(spill, "observation_latitude", None) or getattr(spill, "latitude", None)
-                        lon = getattr(spill, "observation_longitude", None) or getattr(spill, "longitude", None)
-                        if lat is None and hasattr(spill, "centroid"):
-                            lat = getattr(spill.centroid, "lat", None)
-                            lon = getattr(spill.centroid, "lon", None)
-                        dt = getattr(spill, "detected_at", None)
-                        if lat is not None and lon is not None and dt is not None:
-                            return float(lat), float(lon), dt
-                except Exception:
-                    pass
+        spill = SpillCatalogService.get_spill(spill_id)
+        if spill:
+            lat = spill.get("observation_latitude")
+            lon = spill.get("observation_longitude")
+            dt = spill.get("detected_at")
+            if lat is not None and lon is not None and dt is not None:
+                if isinstance(dt, str):
+                    dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+                return float(lat), float(lon), dt
     except Exception:
         pass
 
-    # 2. Try VisualizationService
-    try:
-        from app.services.visualization_service import VisualizationService
-        vis = VisualizationService()
-        for method_name in ("get_spill_visualization", "get_spill", "get_visualization_data"):
-            if hasattr(vis, method_name):
-                try:
-                    data = getattr(vis, method_name)(spill_id)
-                    if data and isinstance(data, dict) and "spill" in data:
-                        sp = data["spill"]
-                        lat = sp.get("latitude")
-                        lon = sp.get("longitude")
-                        dt = sp.get("detected_at")
-                        if lat is not None and lon is not None and dt is not None:
-                            if isinstance(dt, str):
-                                dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
-                            return float(lat), float(lon), dt
-                except Exception:
-                    pass
-    except Exception:
-        pass
+    # A4 Step 2 (VisualizationService block) DELETED — always crashed.
 
-    # 3. Fallback: Scan local project JSON files in data and json_output
+    # Step 3 (now step 2): Fallback: Scan local project JSON files
     for search_dir in [PROJECT_ROOT / "data", PROJECT_ROOT / "json_output"]:
         if not search_dir.exists():
             continue
@@ -155,34 +123,12 @@ def _resolve_spill_info(spill_id: str) -> tuple[float, float, datetime]:
 # ----------------------------------------------------------------------
 # Dependency Providers
 # ----------------------------------------------------------------------
-def get_weather_service():
+def get_weather_service(request: Request):
     """
-    Provide a year-aware WeatherService.
-
-    The requested timestamp determines which monthly
-    ERA5 and CMEMS datasets are loaded.
+    D2: Return the single WeatherService from app.state,
+    created once at application startup.
     """
-    weather = WeatherService(
-        weather_yearly_dir=(
-            PROJECT_ROOT
-            / "data"
-            / "weather"
-            / "raw"
-            / "yearly"
-        ),
-        ocean_yearly_dir=(
-            PROJECT_ROOT
-            / "data"
-            / "ocean"
-            / "raw"
-            / "yearly"
-        ),
-    )
-
-    try:
-        yield weather
-    finally:
-        weather.close()
+    return request.app.state.weather_service
 
 
 def get_drift_engine(
@@ -230,12 +176,21 @@ async def forward_drift(
     drift_engine: DriftEngine = Depends(get_drift_engine),
 ):
     try:
-        trajectory = drift_engine.forward_drift(
+        # D3: run blocking NetCDF I/O + physics in threadpool
+        trajectory = await run_in_threadpool(
+            drift_engine.forward_drift,
             start_latitude=request.start_latitude,
             start_longitude=request.start_longitude,
             start_time=request.start_time,
             duration_hours=request.duration_hours,
         )
+
+        # B6: guard against empty trajectory (no metocean data)
+        if not trajectory.states:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="Metocean velocity unavailable for the requested position and time.",
+            )
 
         return {
             "end_latitude": trajectory.end.latitude,
@@ -243,9 +198,26 @@ async def forward_drift(
             "end_timestamp": trajectory.end.timestamp,
         }
 
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
 
@@ -259,7 +231,9 @@ async def hindcast_drift(
     hindcast_service: HindcastService = Depends(get_hindcast_service),
 ):
     try:
-        estimate = hindcast_service.backward_ensemble(
+        # D3: run blocking NetCDF I/O + physics in threadpool
+        estimate = await run_in_threadpool(
+            hindcast_service.backward_ensemble,
             obs_latitude=request.obs_latitude,
             obs_longitude=request.obs_longitude,
             obs_time=request.obs_time,
@@ -273,9 +247,26 @@ async def hindcast_drift(
             "radius_km": estimate.radius_km,
         }
 
+    except HTTPException:
+        raise
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=500,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(exc),
         ) from exc
 
@@ -340,7 +331,9 @@ async def predict_spill_drift_by_id(
         start_time_naive = start_time
 
     try:
-        trajectory_result = drift_engine.forward_drift(
+        # D3: run blocking physics in threadpool
+        trajectory_result = await run_in_threadpool(
+            drift_engine.forward_drift,
             start_latitude=start_lat,
             start_longitude=start_lon,
             start_time=start_time_naive,
