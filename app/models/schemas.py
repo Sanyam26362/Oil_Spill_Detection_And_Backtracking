@@ -110,6 +110,7 @@ class DemoSpillVessel(BaseModel):
     vessel_id: str
     is_mock: bool
     is_mock_comparison: Optional[bool] = False
+    identifiers_synthetic: bool = True
     rank: Optional[int] = None
     score: Optional[float] = None
 

@@ -1,5 +1,4 @@
 import hashlib
-import math
 import re
 from typing import List, Dict, Any, Optional
 
@@ -285,6 +284,7 @@ class MockVesselService:
                 "vessel_id": id_1,
                 "is_mock": True,
                 "is_mock_comparison": True,
+                "identifiers_synthetic": True,
                 "rank": 2,
                 "vessel_name": id_1,
                 "country": "LR",
@@ -311,6 +311,7 @@ class MockVesselService:
                 "vessel_id": id_2,
                 "is_mock": True,
                 "is_mock_comparison": True,
+                "identifiers_synthetic": True,
                 "rank": 3,
                 "vessel_name": id_2,
                 "country": "MT",
@@ -337,6 +338,7 @@ class MockVesselService:
                 "vessel_id": id_3,
                 "is_mock": True,
                 "is_mock_comparison": True,
+                "identifiers_synthetic": True,
                 "rank": 4,
                 "vessel_name": id_3,
                 "country": "GR",

@@ -170,6 +170,7 @@ async def _build_spill_vessels(
             "vessel_name": real_vessel_id,
             "is_mock": False,
             "is_mock_comparison": False,
+            "identifiers_synthetic": True,
             "rank": 1,
             "score": top_score_val,
             "mmsi": generate_valid_mmsi("CY", seed, offset=0),
