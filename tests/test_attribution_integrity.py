@@ -16,7 +16,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 PRODUCTION_FILES = [
     PROJECT_ROOT / "app" / "services" / "attribution_engine.py",
     PROJECT_ROOT / "app" / "services" / "scoring_engine.py",
-    PROJECT_ROOT / "app" / "services" / "trajectory_service.py",
+    # trajectory_service.py deleted (F3) — it was never imported by production code.
     PROJECT_ROOT / "app" / "repositories" / "ais_repository.py",
     PROJECT_ROOT / "app" / "services" / "hindcast_service.py",
     PROJECT_ROOT / "app" / "services" / "drift_engine.py",

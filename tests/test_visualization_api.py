@@ -23,6 +23,9 @@ def ensure_app_state():
             cache_max_months=3,
         )
     yield
+    if hasattr(app.state, "weather_service") and app.state.weather_service is not None:
+        app.state.weather_service.close()
+        app.state.weather_service = None
 
 
 @pytest.mark.asyncio
