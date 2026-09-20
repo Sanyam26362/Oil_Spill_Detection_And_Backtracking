@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import logging
-import math
 
 import numpy as np
 
@@ -389,6 +388,7 @@ class DriftEngine:
         duration_hours: float,
         timestep_minutes: int,
         direction: str,
+        include_history: bool = True,
     ) -> list[DriftTrajectory]:
 
         if duration_hours <= 0:
@@ -432,20 +432,31 @@ class DriftEngine:
         drift_u[valid_idx] = curr_u[valid_idx] + self.windage * wind_u[valid_idx]
         drift_v[valid_idx] = curr_v[valid_idx] + self.windage * wind_v[valid_idx]
 
-        for idx in np.where(valid_idx)[0]:
-            history[idx].append(
-                ParticleState(
-                    timestamp=timestamp,
-                    latitude=float(lats[idx]),
-                    longitude=float(lons[idx]),
-                    wind_u=float(wind_u[idx]),
-                    wind_v=float(wind_v[idx]),
-                    current_u=float(curr_u[idx]),
-                    current_v=float(curr_v[idx]),
-                    drift_u=float(drift_u[idx]),
-                    drift_v=float(drift_v[idx]),
+        if include_history:
+            for idx in np.where(valid_idx)[0]:
+                history[idx].append(
+                    ParticleState(
+                        timestamp=timestamp,
+                        latitude=float(lats[idx]),
+                        longitude=float(lons[idx]),
+                        wind_u=float(wind_u[idx]),
+                        wind_v=float(wind_v[idx]),
+                        current_u=float(curr_u[idx]),
+                        current_v=float(curr_v[idx]),
+                        drift_u=float(drift_u[idx]),
+                        drift_v=float(drift_v[idx]),
+                    )
                 )
-            )
+        else:
+            last_timestamp = [timestamp if valid_idx[i] else None for i in range(num_particles)]
+            last_lat = lats.copy()
+            last_lon = lons.copy()
+            last_wind_u = wind_u.copy()
+            last_wind_v = wind_v.copy()
+            last_curr_u = curr_u.copy()
+            last_curr_v = curr_v.copy()
+            last_drift_u = drift_u.copy()
+            last_drift_v = drift_v.copy()
 
         for step in range(number_of_steps):
             if not np.any(active):
@@ -475,6 +486,12 @@ class DriftEngine:
 
             step_valid = ~np.isnan(wind_u_new) & ~np.isnan(wind_v_new) & ~np.isnan(curr_u_new) & ~np.isnan(curr_v_new)
 
+            # E4: Vectorize drift velocity update over active particles
+            step_d_u = curr_u_new + self.windage * wind_u_new
+            step_d_v = curr_v_new + self.windage * wind_v_new
+            drift_u[active_idx[step_valid]] = step_d_u[step_valid]
+            drift_v[active_idx[step_valid]] = step_d_v[step_valid]
+
             for i, idx in enumerate(active_idx):
                 if not step_valid[i]:
                     active[idx] = False
@@ -484,25 +501,30 @@ class DriftEngine:
                         step, idx, lats[idx], lons[idx], timestamp
                     )
                 else:
-                    d_u = curr_u_new[i] + self.windage * wind_u_new[i]
-                    d_v = curr_v_new[i] + self.windage * wind_v_new[i]
-
-                    drift_u[idx] = d_u
-                    drift_v[idx] = d_v
-
-                    history[idx].append(
-                        ParticleState(
-                            timestamp=timestamp,
-                            latitude=float(lats[idx]),
-                            longitude=float(lons[idx]),
-                            wind_u=float(wind_u_new[i]),
-                            wind_v=float(wind_v_new[i]),
-                            current_u=float(curr_u_new[i]),
-                            current_v=float(curr_v_new[i]),
-                            drift_u=float(d_u),
-                            drift_v=float(d_v),
+                    if include_history:
+                        history[idx].append(
+                            ParticleState(
+                                timestamp=timestamp,
+                                latitude=float(lats[idx]),
+                                longitude=float(lons[idx]),
+                                wind_u=float(wind_u_new[i]),
+                                wind_v=float(wind_v_new[i]),
+                                current_u=float(curr_u_new[i]),
+                                current_v=float(curr_u_new[i]),
+                                drift_u=float(step_d_u[i]),
+                                drift_v=float(step_d_v[i]),
+                            )
                         )
-                    )
+                    else:
+                        last_timestamp[idx] = timestamp
+                        last_lat[idx] = lats[idx]
+                        last_lon[idx] = lons[idx]
+                        last_wind_u[idx] = wind_u_new[i]
+                        last_wind_v[idx] = wind_v_new[i]
+                        last_curr_u[idx] = curr_u_new[i]
+                        last_curr_v[idx] = curr_v_new[i]
+                        last_drift_u[idx] = step_d_u[i]
+                        last_drift_v[idx] = step_d_v[i]
 
         # ----------------------------------------------------------
         # Ensemble remainder step
@@ -546,6 +568,12 @@ class DriftEngine:
                 & ~np.isnan(curr_v_r)
             )
 
+            # E4: Vectorize remainder drift velocity update over active particles
+            rem_d_u = curr_u_r + self.windage * wind_u_r
+            rem_d_v = curr_v_r + self.windage * wind_v_r
+            drift_u[active_idx[rem_valid]] = rem_d_u[rem_valid]
+            drift_v[active_idx[rem_valid]] = rem_d_v[rem_valid]
+
             for i, idx in enumerate(active_idx):
                 if not rem_valid[i]:
                     logger.warning(
@@ -554,25 +582,47 @@ class DriftEngine:
                         idx, lats[idx], lons[idx], timestamp,
                     )
                 else:
-                    d_u = curr_u_r[i] + self.windage * wind_u_r[i]
-                    d_v = curr_v_r[i] + self.windage * wind_v_r[i]
-
-                    drift_u[idx] = d_u
-                    drift_v[idx] = d_v
-
-                    history[idx].append(
-                        ParticleState(
-                            timestamp=timestamp,
-                            latitude=float(lats[idx]),
-                            longitude=float(lons[idx]),
-                            wind_u=float(wind_u_r[i]),
-                            wind_v=float(wind_v_r[i]),
-                            current_u=float(curr_u_r[i]),
-                            current_v=float(curr_v_r[i]),
-                            drift_u=float(d_u),
-                            drift_v=float(d_v),
+                    if include_history:
+                        history[idx].append(
+                            ParticleState(
+                                timestamp=timestamp,
+                                latitude=float(lats[idx]),
+                                longitude=float(lons[idx]),
+                                wind_u=float(wind_u_r[i]),
+                                wind_v=float(wind_v_r[i]),
+                                current_u=float(curr_u_r[i]),
+                                current_v=float(curr_v_r[i]),
+                                drift_u=float(rem_d_u[i]),
+                                drift_v=float(rem_d_v[i]),
+                            )
                         )
-                    )
+                    else:
+                        last_timestamp[idx] = timestamp
+                        last_lat[idx] = lats[idx]
+                        last_lon[idx] = lons[idx]
+                        last_wind_u[idx] = wind_u_r[i]
+                        last_wind_v[idx] = wind_v_r[i]
+                        last_curr_u[idx] = curr_u_r[i]
+                        last_curr_v[idx] = curr_v_r[i]
+                        last_drift_u[idx] = rem_d_u[i]
+                        last_drift_v[idx] = rem_d_v[i]
+
+        if not include_history:
+            for idx in range(num_particles):
+                if last_timestamp[idx] is not None:
+                    history[idx] = [
+                        ParticleState(
+                            timestamp=last_timestamp[idx],
+                            latitude=float(last_lat[idx]),
+                            longitude=float(last_lon[idx]),
+                            wind_u=float(last_wind_u[idx]),
+                            wind_v=float(last_wind_v[idx]),
+                            current_u=float(last_curr_u[idx]),
+                            current_v=float(last_curr_v[idx]),
+                            drift_u=float(last_drift_u[idx]),
+                            drift_v=float(last_drift_v[idx]),
+                        )
+                    ]
 
         return [DriftTrajectory(states=states) for states in history]
 
@@ -625,6 +675,7 @@ class DriftEngine:
         start_time: datetime,
         duration_hours: float,
         timestep_minutes: int = 15,
+        include_history: bool = True,
     ) -> list[DriftTrajectory]:
         """
         Simulate oil movement forward in time for multiple particles.
@@ -636,6 +687,7 @@ class DriftEngine:
             duration_hours=duration_hours,
             timestep_minutes=timestep_minutes,
             direction="forward",
+            include_history=include_history,
         )
 
     def backward_drift_ensemble(
@@ -645,6 +697,7 @@ class DriftEngine:
         obs_time: datetime,
         duration_hours: float,
         timestep_minutes: int = 15,
+        include_history: bool = True,
     ) -> list[DriftTrajectory]:
         """
         Hindcast backwards for multiple observed slick points.
@@ -656,36 +709,7 @@ class DriftEngine:
             duration_hours=duration_hours,
             timestep_minutes=timestep_minutes,
             direction="backward",
-        )
-
-    @staticmethod
-    def _offset_position(
-        latitude: float,
-        longitude: float,
-        east_m: float,
-        north_m: float,
-    ) -> tuple[float, float]:
-        """
-        Offset a geographic point by east/north distances in meters.
-        """
-
-        latitude_rad = np.radians(latitude)
-
-        delta_lat = np.degrees(
-            north_m / EARTH_RADIUS_M
-        )
-
-        delta_lon = np.degrees(
-            east_m
-            / (
-                EARTH_RADIUS_M
-                * np.cos(latitude_rad)
-            )
-        )
-
-        return (
-            latitude + delta_lat,
-            longitude + delta_lon,
+            include_history=include_history,
         )
 
     @staticmethod

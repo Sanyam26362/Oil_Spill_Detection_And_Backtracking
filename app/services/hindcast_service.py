@@ -77,31 +77,9 @@ class HindcastService:
         lat2: float,
         lon2: float,
     ) -> float:
-
-        earth_radius_km = 6371.0
-
-        lat1_rad = np.radians(lat1)
-        lat2_rad = np.radians(lat2)
-
-        dlat = np.radians(lat2 - lat1)
-        dlon = np.radians(lon2 - lon1)
-
-        a = (
-            np.sin(dlat / 2.0) ** 2
-            +
-            np.cos(lat1_rad)
-            * np.cos(lat2_rad)
-            * np.sin(dlon / 2.0) ** 2
-        )
-
-        return float(
-            earth_radius_km
-            * 2.0
-            * np.arctan2(
-                np.sqrt(a),
-                np.sqrt(1.0 - a),
-            )
-        )
+        # F6: Delegate to DriftEngine to eliminate duplicate implementation.
+        # Formula and radius (6371.0 km) are identical — output is unchanged.
+        return DriftEngine.haversine_km(lat1, lon1, lat2, lon2)
 
     def backward_ensemble(
         self,
@@ -154,12 +132,15 @@ class HindcastService:
             north_m=north_m,
         )
 
+        # E4: Only the final state per particle is needed (trajectory.end);
+        # avoid allocating intermediate ParticleState objects.
         trajectories = self.drift_engine.backward_drift_ensemble(
             obs_latitudes=particle_latitudes,
             obs_longitudes=particle_longitudes,
             obs_time=obs_time,
             duration_hours=duration_hours,
             timestep_minutes=timestep_minutes,
+            include_history=False,
         )
 
         for trajectory in trajectories:
