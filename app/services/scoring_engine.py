@@ -5,7 +5,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-from app.services.hindcast_service import HindcastService
+_EARTH_RADIUS_KM = 6371.0  # must match HindcastService.haversine_km
 
 
 @dataclass
@@ -21,8 +21,8 @@ class VesselScore:
     approach_score: float
     departure_score: float
 
-    closest_distance_km: float
-    minimum_event_speed_knots: float
+    closest_distance_km: float | None = None
+    minimum_event_speed_knots: float | None = None
 
 
 class ScoringEngine:
@@ -47,13 +47,18 @@ class ScoringEngine:
         source_latitude: float,
         source_longitude: float,
         estimated_release_time: pd.Timestamp,
+        vessel_df: pd.DataFrame | None = None,
     ) -> VesselScore:
-
-        vessel = (
-            df[df["vessel_id"] == vessel_id]
-            .copy()
-            .sort_values("timestamp")
-        )
+        # E2: Accept a pre-filtered sub-frame to skip the O(N) filter
+        # when the caller has already grouped by vessel_id.
+        if vessel_df is not None:
+            vessel = vessel_df.sort_values("timestamp")
+        else:
+            vessel = (
+                df[df["vessel_id"] == vessel_id]
+                .copy()
+                .sort_values("timestamp")
+            )
 
         if vessel.empty:
             return VesselScore(
@@ -65,22 +70,26 @@ class ScoringEngine:
                 loiter_score=0.0,
                 approach_score=0.0,
                 departure_score=0.0,
-                closest_distance_km=999.0,
-                minimum_event_speed_knots=999.0,
+                closest_distance_km=None,
+                minimum_event_speed_knots=None,
             )
 
-        # ----------------------------------------------------------
-        # Distance from estimated source
-        # ----------------------------------------------------------
-
-        vessel["distance_km"] = vessel.apply(
-            lambda row: HindcastService.haversine_km(
-                source_latitude,
-                source_longitude,
-                row["latitude"],
-                row["longitude"],
-            ),
-            axis=1,
+        # E1: Vectorised haversine — same formula as HindcastService.haversine_km
+        # (radius 6371.0 km), no scalar Python loop.
+        lat1_r = np.radians(source_latitude)
+        lat2_r = np.radians(vessel["latitude"].to_numpy(dtype=float))
+        dlat = lat2_r - lat1_r
+        dlon = np.radians(
+            vessel["longitude"].to_numpy(dtype=float) - source_longitude
+        )
+        _a = (
+            np.sin(dlat / 2.0) ** 2
+            + np.cos(lat1_r) * np.cos(lat2_r) * np.sin(dlon / 2.0) ** 2
+        )
+        vessel = vessel.copy()  # materialise copy once before assigning column
+        vessel["distance_km"] = (
+            _EARTH_RADIUS_KM * 2.0
+            * np.arctan2(np.sqrt(_a), np.sqrt(1.0 - _a))
         )
 
         # ----------------------------------------------------------
@@ -103,7 +112,7 @@ class ScoringEngine:
 
         event = vessel[
             vessel["time_diff_min"] <= 30
-        ].copy()
+        ]
 
         pre_window = vessel[
             (
@@ -116,7 +125,7 @@ class ScoringEngine:
                 vessel["timestamp"]
                 < estimated_release_time
             )
-        ].copy()
+        ]
 
         post_window = vessel[
             (
@@ -129,13 +138,13 @@ class ScoringEngine:
                 <= estimated_release_time
                 + pd.Timedelta(minutes=120)
             )
-        ].copy()
+        ]
 
         # A narrower window specifically for loitering around
         # the spill event.
         loiter_window = vessel[
             vessel["time_diff_min"] <= 60
-        ].copy()
+        ]
 
         # ----------------------------------------------------------
         # 1. PROXIMITY
@@ -334,12 +343,20 @@ class ScoringEngine:
                 departure_score,
                 4,
             ),
-            closest_distance_km=round(
-                closest_distance,
-                4,
+            closest_distance_km=(
+                round(
+                    closest_distance,
+                    4,
+                )
+                if closest_distance is not None and not np.isnan(closest_distance)
+                else None
             ),
-            minimum_event_speed_knots=round(
-                minimum_event_speed,
-                4,
+            minimum_event_speed_knots=(
+                round(
+                    minimum_event_speed,
+                    4,
+                )
+                if minimum_event_speed is not None and not np.isnan(minimum_event_speed)
+                else None
             ),
         )

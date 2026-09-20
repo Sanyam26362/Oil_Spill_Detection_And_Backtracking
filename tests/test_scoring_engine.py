@@ -157,6 +157,8 @@ class TestEmptyVessel:
             "V_EMPTY", df, 33.5, 34.0, release_time,
         )
         assert score.total_score == 0.0
+        assert score.closest_distance_km is None
+        assert score.minimum_event_speed_knots is None
 
 
 class TestWeightSum:
