@@ -6,6 +6,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.ais import AISPosition
 from app.repositories.ais_repository import AISRepository
 from app.services.drift_engine import DriftEngine
 from app.services.maritime_simulation import (
@@ -301,6 +302,8 @@ class DemoVesselEvidenceService:
         db: AsyncSession,
         spill: dict,
         vessels: list,
+        prefetched_vessel: Any | None = None,
+        prefetched_widest_positions: list[AISPosition] | None = None,
     ) -> dict:
         """
         Build the evidence response for the exact vessels returned
@@ -426,45 +429,70 @@ class DemoVesselEvidenceService:
                 origin_longitude,
             )
 
-            # 1. Fetch positions within attribution verification window (±2h release window)
-            attrib_positions = (
-                await self.ais_repository
-                .get_positions_for_vessel(
-                    db=db,
-                    vessel_id=real_vessel_id,
-                    start_time=attrib_start,
-                    end_time=attrib_end,
-                    synthetic_only=True,
-                    scenario_id=getattr(real_vessel, "scenario_id", None),
-                    corridor_origin=corridor_center,
-                    max_corridor_radius_km=120.0,
+            # E3: Consolidate redundant DB queries. When prefetched positions
+            # are provided from the widest window, slice in memory.
+            if prefetched_widest_positions is not None:
+                attrib_positions = [
+                    p
+                    for p in prefetched_widest_positions
+                    if attrib_start <= p.timestamp <= attrib_end
+                    and (
+                        corridor_center is None
+                        or self.ais_repository._haversine_distance_m(
+                            origin_latitude,
+                            origin_longitude,
+                            p.latitude,
+                            p.longitude,
+                        )
+                        <= 120.0 * 1000.0
+                    )
+                ]
+                real_positions = [
+                    p
+                    for p in prefetched_widest_positions
+                    if start_time <= p.timestamp <= end_time
+                ]
+                vessel_metadata = prefetched_vessel
+            else:
+                # 1. Fetch positions within attribution verification window (±2h release window)
+                attrib_positions = (
+                    await self.ais_repository
+                    .get_positions_for_vessel(
+                        db=db,
+                        vessel_id=real_vessel_id,
+                        start_time=attrib_start,
+                        end_time=attrib_end,
+                        synthetic_only=True,
+                        scenario_id=getattr(real_vessel, "scenario_id", None),
+                        corridor_origin=corridor_center,
+                        max_corridor_radius_km=120.0,
+                    )
                 )
-            )
 
-            # 2. Fetch positions across full detection/attribution voyage window
-            duration_hours = (end_time - start_time).total_seconds() / 3600.0
-            dynamic_corridor_km = min(600.0, max(150.0, 120.0 + duration_hours * 25.0))
+                # 2. Fetch positions across full detection/attribution voyage window
+                duration_hours = (end_time - start_time).total_seconds() / 3600.0
+                dynamic_corridor_km = min(600.0, max(150.0, 120.0 + duration_hours * 25.0))
 
-            real_positions = (
-                await self.ais_repository
-                .get_positions_for_vessel(
-                    db=db,
-                    vessel_id=real_vessel_id,
-                    start_time=start_time,
-                    end_time=end_time,
-                    synthetic_only=True,
-                    scenario_id=getattr(real_vessel, "scenario_id", None),
-                    corridor_origin=corridor_center,
-                    max_corridor_radius_km=dynamic_corridor_km,
+                real_positions = (
+                    await self.ais_repository
+                    .get_positions_for_vessel(
+                        db=db,
+                        vessel_id=real_vessel_id,
+                        start_time=start_time,
+                        end_time=end_time,
+                        synthetic_only=True,
+                        scenario_id=getattr(real_vessel, "scenario_id", None),
+                        corridor_origin=corridor_center,
+                        max_corridor_radius_km=dynamic_corridor_km,
+                    )
                 )
-            )
 
-            vessel_metadata = (
-                await self.ais_repository.get_vessel(
-                    db=db,
-                    vessel_id=real_vessel_id,
+                vessel_metadata = (
+                    await self.ais_repository.get_vessel(
+                        db=db,
+                        vessel_id=real_vessel_id,
+                    )
                 )
-            )
 
         # ------------------------------------------------------------
         # TWO different AIS reference points

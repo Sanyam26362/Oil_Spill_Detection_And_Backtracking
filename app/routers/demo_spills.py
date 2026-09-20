@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-import json
+import logging
 import math
-import re
 import time
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.concurrency import run_in_threadpool
 import numpy as np
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import AsyncSessionLocal, get_db
+from app.core.database import get_db
 from app.models.schemas import (
     CentroidSchema,
     DemoAttributionTrajectoryResponse,
@@ -24,6 +25,7 @@ from app.models.schemas import (
     PredictionTrajectoryPoint,
     SpillPredictionResponse,
 )
+from app.models.ais import AISPosition
 from app.repositories.ais_repository import AISRepository
 from app.routers.attribution import get_attribution_engine
 from app.routers.drift import get_drift_engine
@@ -32,6 +34,7 @@ from app.services.demo_vessel_evidence_service import (
     DemoVesselEvidenceService,
 )
 from app.services.drift_engine import DriftEngine
+from app.services.maritime_simulation import snap_to_clean_30min
 from app.services.mock_vessel_service import (
     ForensicSubScoreCalculator,
     MockVesselService,
@@ -42,6 +45,7 @@ from app.services.mock_vessel_service import (
 from app.services.spill_catalog_service import SpillCatalogService
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("", response_model=DemoPaginationResponse)
@@ -133,11 +137,12 @@ def _infer_shiptype_code(shiptype_name: str | None) -> int | None:
     return 90
 
 
-@router.get("/{spill_id}/vessels", response_model=DemoSpillVesselResponse)
-async def get_spill_vessels(
+async def _build_spill_vessels(
     spill_id: str,
-    db: AsyncSession | None = Depends(get_db),
-):
+    db: AsyncSession,
+    prefetched_vessel: Any | None = None,
+    prefetched_positions: list[AISPosition] | None = None,
+) -> DemoSpillVesselResponse:
     s = SpillCatalogService.get_spill(spill_id)
 
     if not s:
@@ -183,14 +188,13 @@ async def get_spill_vessels(
 
         # Query database for actual vessel details and positions (read-only)
         session = db
-        close_session = False
-        if session is None:
-            session = AsyncSessionLocal()
-            close_session = True
 
         try:
             ais_repo = AISRepository()
-            vessel_meta = await ais_repo.get_vessel(session, real_vessel_id)
+            if prefetched_vessel is not None:
+                vessel_meta = prefetched_vessel
+            else:
+                vessel_meta = await ais_repo.get_vessel(session, real_vessel_id)
             if vessel_meta:
                 vessel_data["country"] = (
                     vessel_meta.country or vessel_data["country"]
@@ -233,15 +237,18 @@ async def get_spill_vessels(
                     if origin_lat is not None and origin_lon is not None
                     else None
                 )
-                positions = await ais_repo.get_positions_for_vessel(
-                    db=session,
-                    vessel_id=real_vessel_id,
-                    start_time=release_time - timedelta(hours=2),
-                    end_time=release_time + timedelta(hours=2),
-                    synthetic_only=True,
-                    corridor_origin=corridor_center,
-                    max_corridor_radius_km=120.0,
-                )
+                if prefetched_positions is not None:
+                    positions = prefetched_positions
+                else:
+                    positions = await ais_repo.get_positions_for_vessel(
+                        db=session,
+                        vessel_id=real_vessel_id,
+                        start_time=release_time - timedelta(hours=2),
+                        end_time=release_time + timedelta(hours=2),
+                        synthetic_only=True,
+                        corridor_origin=corridor_center,
+                        max_corridor_radius_km=120.0,
+                    )
                 if (
                     positions
                     and origin_lat is not None
@@ -286,10 +293,14 @@ async def get_spill_vessels(
                         (p_time - release_time).total_seconds() / 3600.0, 2
                     )
         except Exception:
-            pass
-        finally:
-            if close_session:
-                await session.close()
+            # C2: log the exception so failures are visible in server logs.
+            # Control flow is unchanged — the endpoint still returns the
+            # un-enriched vessel data successfully.
+            logger.exception(
+                "DB enrichment failed for vessel %s (spill %s)",
+                real_vessel_id,
+                spill_id,
+            )
 
         # Compute forensic sub-scores from the real vessel's AIS attributes.
         # This is always called so that sub-scores are never null for rank-1.
@@ -327,6 +338,14 @@ async def get_spill_vessels(
     return DemoSpillVesselResponse(spill_id=spill_id, vessels=vessels)
 
 
+@router.get("/{spill_id}/vessels", response_model=DemoSpillVesselResponse)
+async def get_spill_vessels(
+    spill_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    return await _build_spill_vessels(spill_id, db=db)
+
+
 # ============================================================
 # NEW API
 # ============================================================
@@ -355,20 +374,101 @@ async def get_spill_attribution_trajectory(
         )
 
     try:
-        # --------------------------------------------------------
-        # Reuse the EXISTING /vessels endpoint.
-        #
-        # This guarantees:
-        #
-        #   rank 1 -> real culprit
-        #   rank 2 -> mock vessel 1
-        #   rank 3 -> mock vessel 2
-        #   rank 4 -> mock vessel 3
-        # --------------------------------------------------------
+        # E3: Consolidate redundant DB queries into a single widest-window
+        # get_positions_for_vessel call plus one get_vessel call.
+        real_vessel_id = s.get("ranked_top_vessel")
+        vessel_metadata = None
+        widest_positions = None
+        sliced_vessels_positions = None
 
-        existing_vessel_response = await get_spill_vessels(
+        if real_vessel_id:
+            ais_repo = AISRepository()
+            rel_time_str = s.get("estimated_release_time")
+            if rel_time_str:
+                release_time = datetime.fromisoformat(rel_time_str)
+                if release_time.tzinfo is None:
+                    release_time = release_time.replace(tzinfo=timezone.utc)
+
+                detected_at_str = s.get("detected_at")
+                detected_at = (
+                    datetime.fromisoformat(detected_at_str)
+                    if detected_at_str
+                    else None
+                )
+                if detected_at and detected_at.tzinfo is None:
+                    detected_at = detected_at.replace(tzinfo=timezone.utc)
+
+                origin_lat = s.get("estimated_source_latitude") or s.get(
+                    "observation_latitude"
+                )
+                origin_lon = s.get("estimated_source_longitude") or s.get(
+                    "observation_longitude"
+                )
+                corridor_center = (
+                    (origin_lat, origin_lon)
+                    if origin_lat is not None and origin_lon is not None
+                    else None
+                )
+
+                nominal_start = release_time - timedelta(hours=3)
+                start_time = snap_to_clean_30min(nominal_start, "round")
+
+                if detected_at is not None:
+                    nominal_end = detected_at + timedelta(hours=3)
+                    end_time = snap_to_clean_30min(nominal_end, "round")
+                else:
+                    nominal_end = release_time + timedelta(hours=6)
+                    end_time = snap_to_clean_30min(nominal_end, "round")
+
+                if end_time < start_time + timedelta(hours=6):
+                    end_time = start_time + timedelta(hours=6)
+
+                duration_hours = (
+                    end_time - start_time
+                ).total_seconds() / 3600.0
+                dynamic_corridor_km = min(
+                    600.0, max(150.0, 120.0 + duration_hours * 25.0)
+                )
+
+                widest_start = min(
+                    start_time, release_time - timedelta(hours=2)
+                )
+                widest_end = max(
+                    end_time, release_time + timedelta(hours=2)
+                )
+                widest_corridor_km = max(dynamic_corridor_km, 120.0)
+
+                vessel_metadata = await ais_repo.get_vessel(db, real_vessel_id)
+                widest_positions = await ais_repo.get_positions_for_vessel(
+                    db=db,
+                    vessel_id=real_vessel_id,
+                    start_time=widest_start,
+                    end_time=widest_end,
+                    synthetic_only=True,
+                    corridor_origin=corridor_center,
+                    max_corridor_radius_km=widest_corridor_km,
+                )
+
+                vessels_start = release_time - timedelta(hours=2)
+                vessels_end = release_time + timedelta(hours=2)
+                sliced_vessels_positions = [
+                    p
+                    for p in widest_positions
+                    if vessels_start <= p.timestamp <= vessels_end
+                    and (
+                        corridor_center is None
+                        or ais_repo._haversine_distance_m(
+                            origin_lat, origin_lon, p.latitude, p.longitude
+                        )
+                        <= 120.0 * 1000.0
+                    )
+                ]
+
+        existing_vessel_response = await _build_spill_vessels(
             spill_id,
             db=db,
+            prefetched_vessel=vessel_metadata,
+            prefetched_positions=sliced_vessels_positions,
         )
 
         service = DemoVesselEvidenceService()
@@ -377,15 +477,16 @@ async def get_spill_attribution_trajectory(
             db=db,
             spill=s,
             vessels=existing_vessel_response.vessels,
+            prefetched_vessel=vessel_metadata,
+            prefetched_widest_positions=widest_positions,
         )
 
     except HTTPException:
         raise
 
     except Exception as exc:
-        print(
-            "Error building attribution "
-            f"trajectory for {spill_id}: {exc}"
+        logger.exception(
+            "Error building attribution trajectory for %s", spill_id
         )
 
         raise HTTPException(
@@ -439,10 +540,10 @@ async def backtrack_spill(
 
         elapsed = time.perf_counter() - started
 
-        print(
-            f"spill_id={spill_id} "
-            f"backtrack_runtime_seconds="
-            f"{elapsed:.3f}"
+        logger.info(
+            "spill_id=%s backtrack_runtime_seconds=%.3f",
+            spill_id,
+            elapsed,
         )
 
         source_estimate = result.get("source_estimate") or {}
@@ -478,8 +579,8 @@ async def backtrack_spill(
 
         top_cand = candidates[0] if candidates else {}
         top_score = top_cand.get("score")
-        if top_score is None:
-            top_score = top_cand.get("total_score")
+        # F8: Remove dead top_cand.get("total_score") fallback —
+        # candidate dicts only ever carry "score".
         if top_score is None and spill.get("ranked_top_score") is not None:
             try:
                 top_score = float(spill["ranked_top_score"])
@@ -500,7 +601,7 @@ async def backtrack_spill(
         )
 
     except Exception as exc:
-        print(f"Error during backtrack for {spill_id}: {exc}")
+        logger.exception("Error during backtrack for %s", spill_id)
 
         raise HTTPException(
             status_code=500,
@@ -562,7 +663,9 @@ async def predict_demo_spill_trajectory(
         start_time_naive = start_time
 
     try:
-        drift_trajectory = drift_engine.forward_drift(
+        # D3: wrap blocking physics in threadpool
+        drift_trajectory = await run_in_threadpool(
+            drift_engine.forward_drift,
             start_latitude=start_lat,
             start_longitude=start_lon,
             start_time=start_time_naive,
@@ -653,7 +756,7 @@ async def predict_demo_spill_trajectory(
     except HTTPException:
         raise
     except Exception as exc:
-        print(f"Error during forward prediction for {spill_id}: {exc}")
+        logger.exception("Error during forward prediction for %s", spill_id)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Forward drift prediction failed: {str(exc)}",
