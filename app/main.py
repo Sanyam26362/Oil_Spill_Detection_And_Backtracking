@@ -1,4 +1,6 @@
 from contextlib import asynccontextmanager
+import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,8 +16,15 @@ from app.routers import (
     visualization,
 )
 from app.services.spill_catalog_service import SpillCatalogService
-from app.models.ais import AISPosition, Vessel
-from app.models.spill import OilSpillDetection
+from app.services.weather_service import WeatherService
+# These imports register ORM models with Base.metadata before create_all.
+from app.models.ais import AISPosition, Vessel  # noqa: F401
+from app.models.spill import OilSpillDetection  # noqa: F401
+
+__all__ = ["AISPosition", "Vessel", "OilSpillDetection"]
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -24,15 +33,53 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    # E7: Verify required runtime data paths exist before serving traffic.
+    # Log clear logger.error (do not raise) naming path and purpose.
+    required_paths = [
+        (
+            PROJECT_ROOT / "json_output",
+            "required by SpillCatalogService for loading demo spills, detection metadata, and polygons",
+        ),
+        (
+            PROJECT_ROOT / "data" / "weather" / "raw",
+            "required by WeatherService for ERA5 10m atmospheric wind NetCDF datasets",
+        ),
+        (
+            PROJECT_ROOT / "data" / "ocean" / "raw",
+            "required by WeatherService for CMEMS hydrodynamic ocean current NetCDF datasets",
+        ),
+    ]
+    for req_path, purpose in required_paths:
+        if not req_path.exists():
+            logger.error(
+                "Runtime data path missing: %s (%s). Please verify volumes or populate data.",
+                req_path,
+                purpose,
+            )
+
     # Initialize the in-memory catalog for the demo
     SpillCatalogService.initialize()
+
+    # D2: Create a single shared WeatherService for the application lifetime.
+    # All routers (drift, attribution, visualization) retrieve it from app.state.
+    app.state.weather_service = WeatherService(
+        weather_yearly_dir=(
+            PROJECT_ROOT / "data" / "weather" / "raw" / "yearly"
+        ),
+        ocean_yearly_dir=(
+            PROJECT_ROOT / "data" / "ocean" / "raw" / "yearly"
+        ),
+    )
 
     yield
 
     # Close database connection pool
     await engine.dispose()
 
-    # Close visualization weather service
+    # Close the shared WeatherService (datasets + file handles).
+    app.state.weather_service.close()
+
+    # visualization.shutdown_weather_service() is now a no-op stub (D2).
     visualization.shutdown_weather_service()
 
 
