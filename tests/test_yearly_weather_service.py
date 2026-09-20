@@ -261,3 +261,119 @@ def test_missing_month_fails_cleanly():
 
     finally:
         service.close()
+
+
+def test_month_alternation_lru_cache():
+    """
+    C3: Assert that requesting two different months in immediate alternation
+    returns correct non-corrupted values, and that the previously-loaded month
+    is still cached (not reloaded from disk) on the third request.
+    """
+    service = WeatherService(
+        weather_yearly_dir=WEATHER_DIR,
+        ocean_yearly_dir=OCEAN_DIR,
+        cache_max_months=3,
+    )
+
+    load_count = 0
+    orig_load = service._load_single_month
+
+    def spy_load(year: int, month: int):
+        nonlocal load_count
+        load_count += 1
+        return orig_load(year, month)
+
+    service._load_single_month = spy_load
+
+    try:
+        # Request 1: Month 1 (January 2019)
+        v1 = service.get_velocity(
+            latitude=35.0,
+            longitude=24.0,
+            timestamp=datetime(2019, 1, 15, 12, 0, tzinfo=timezone.utc),
+        )
+        assert np.isfinite(v1.wind_u)
+        assert np.isfinite(v1.wind_v)
+        assert np.isfinite(v1.current_u)
+        assert np.isfinite(v1.current_v)
+        assert load_count == 1
+        assert service.describe()["loaded_month"] == 1
+        assert len(service._month_cache) == 1
+
+        # Request 2: Month 2 (February 2019) - alternating
+        v2 = service.get_velocity(
+            latitude=35.0,
+            longitude=24.0,
+            timestamp=datetime(2019, 2, 15, 12, 0, tzinfo=timezone.utc),
+        )
+        assert np.isfinite(v2.wind_u)
+        assert np.isfinite(v2.wind_v)
+        assert np.isfinite(v2.current_u)
+        assert np.isfinite(v2.current_v)
+        assert load_count == 2
+        assert service.describe()["loaded_month"] == 2
+        assert len(service._month_cache) == 2
+
+        # Request 3: Month 1 AGAIN - must be served from cache without reloading!
+        v3 = service.get_velocity(
+            latitude=35.0,
+            longitude=24.0,
+            timestamp=datetime(2019, 1, 15, 12, 0, tzinfo=timezone.utc),
+        )
+        # Check values match Request 1 exactly
+        assert v3.wind_u == v1.wind_u
+        assert v3.wind_v == v1.wind_v
+        assert v3.current_u == v1.current_u
+        assert v3.current_v == v1.current_v
+
+        # Load count must NOT have increased
+        assert load_count == 2, f"Expected 2 loads (from disk), but got {load_count} (cache thrashing detected)"
+        assert service.describe()["loaded_month"] == 1
+        assert len(service._month_cache) == 2
+
+    finally:
+        service.close()
+
+
+def test_cross_month_concat_caching_and_lru_eviction():
+    """
+    E1: Assert that cross-month concat datasets are cached and invalidated
+    upon eviction of an underlying month from the LRU.
+    """
+    service = WeatherService(
+        weather_yearly_dir=WEATHER_DIR,
+        ocean_yearly_dir=OCEAN_DIR,
+        cache_max_months=2,
+    )
+
+    try:
+        # Request at month boundary: 2019-01-31 23:55:00
+        # Triggers cross-month loading of Jan and Feb into LRU
+        boundary_ts = datetime(2019, 1, 31, 23, 55, 0, tzinfo=timezone.utc)
+        v1 = service.get_velocity(latitude=35.0, longitude=24.0, timestamp=boundary_ts)
+        assert np.isfinite(v1.wind_u)
+        assert (2019, 1) in service._cross_month_cache
+
+        cached_era5, cached_cmems = service._cross_month_cache[(2019, 1)]
+
+        # Second request near same boundary must reuse the exact cached xr.concat dataset
+        v2 = service.get_velocity(latitude=35.0, longitude=24.0, timestamp=boundary_ts)
+        assert v2.wind_u == v1.wind_u
+        assert service._cross_month_cache[(2019, 1)][0] is cached_era5
+
+        # Active month must remain the requested month (January = 1)
+        assert service.describe()["loaded_month"] == 1
+
+        # Now request month 3 (March 2019), exceeding cache_max_months=2
+        # This will evict the LRU month (which is February = 2)
+        service.get_velocity(
+            latitude=35.0,
+            longitude=24.0,
+            timestamp=datetime(2019, 3, 15, 12, 0, tzinfo=timezone.utc),
+        )
+        assert len(service._month_cache) <= 2
+        # Cross-month cache for (2019, 1) depended on month 2, so it must be invalidated
+        assert (2019, 1) not in service._cross_month_cache
+
+    finally:
+        service.close()
