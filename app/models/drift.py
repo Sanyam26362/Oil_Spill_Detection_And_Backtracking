@@ -23,17 +23,6 @@ class EnvironmentalVelocity:
     current_v: float
 
 
-@dataclass
-class DriftVelocity:
-    """
-    Resulting surface drift velocity.
-
-    u -> east-west component (m/s)
-    v -> north-south component (m/s)
-    """
-
-    u: float
-    v: float
 
 
 @dataclass
