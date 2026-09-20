@@ -9,8 +9,10 @@ geoalchemy2==0.14.6
 geopandas==0.14.3
 shapely==2.0.3
 numpy==1.26.4
-xarray==2026.7.0
+# G1: 2026.7.0 was a typo (future date). 2024.7.0 is the correct PyPI release.
+xarray==2024.7.0
 netCDF4==1.6.5
 scipy==1.12.0
+pandas==2.2.1
 python-dotenv==1.0.1
 httpx==0.27.2

@@ -7,8 +7,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    ports:
-      - "5432:5432"
+    # G3: Port not exposed externally — only the api service connects via Docker network.
     volumes:
       - ${POSTGRES_DATA_PATH:-postgres_data}:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d
@@ -17,6 +16,10 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
 
   api:
     build: .
@@ -33,6 +36,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
 
 volumes:
   postgres_data:

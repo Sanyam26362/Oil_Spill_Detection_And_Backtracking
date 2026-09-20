@@ -128,3 +128,6 @@ data/ais/processed/benchmark_500_ml/
 
 !docs/
 !docs/**/*.md
+tree.txt
+scripts/dev/
+
