@@ -14,6 +14,12 @@ async def test_sliced_in_memory_matches_separate_queries():
     real_vessel_id = spill.get("ranked_top_vessel")
     assert real_vessel_id is not None
 
+    try:
+        async with AsyncSessionLocal() as session:
+            await AISRepository.get_vessel(session, real_vessel_id)
+    except Exception:
+        pytest.skip("Database not available for AIS queries")
+
     rel_time_str = spill.get("estimated_release_time")
     release_time = datetime.fromisoformat(rel_time_str)
     if release_time.tzinfo is None:

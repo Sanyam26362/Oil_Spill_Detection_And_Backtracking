@@ -15,6 +15,8 @@ OCEAN_DIR = PROJECT_ROOT / "data" / "ocean" / "raw" / "yearly"
 @pytest.fixture(autouse=True)
 def ensure_app_state():
     """Ensure app.state.weather_service and SpillCatalogService are initialized."""
+    if not WEATHER_DIR.exists() or not any(WEATHER_DIR.glob("*.nc")):
+        pytest.skip("Yearly environmental datasets not found")
     SpillCatalogService.initialize()
     if not hasattr(app.state, "weather_service") or app.state.weather_service is None:
         app.state.weather_service = WeatherService(

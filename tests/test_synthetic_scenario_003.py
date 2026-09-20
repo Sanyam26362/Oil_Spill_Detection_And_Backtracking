@@ -345,6 +345,8 @@ has_run = False
 
 def get_validator():
     global has_run
+    if not CSV_PATH.exists() or not JSON_PATH.exists():
+        pytest.skip(f"Synthetic scenario files not found at {CSV_PATH}")
     if not has_run:
         validator_instance.run()
         has_run = True

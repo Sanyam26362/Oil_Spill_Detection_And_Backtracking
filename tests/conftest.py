@@ -17,6 +17,8 @@ CMEMS_PATH = PROJECT_ROOT / "data" / "ocean" / "raw" / "med_currents_2019-07-eve
 @pytest.fixture(scope="session")
 def weather_service():
     """Session-scoped WeatherService to avoid re-opening NetCDF files."""
+    if not ERA5_PATH.exists() or not CMEMS_PATH.exists():
+        pytest.skip(f"Environmental datasets not found at {ERA5_PATH} or {CMEMS_PATH}")
     from app.services.weather_service import WeatherService
     ws = WeatherService(era5_path=ERA5_PATH, cmems_path=CMEMS_PATH)
     yield ws

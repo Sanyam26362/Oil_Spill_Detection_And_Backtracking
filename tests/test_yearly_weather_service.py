@@ -1,3 +1,4 @@
+import pytest
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,6 +25,10 @@ OCEAN_DIR = (
     / "yearly"
 )
 
+@pytest.fixture(autouse=True)
+def check_yearly_datasets():
+    if not WEATHER_DIR.exists() or not any(WEATHER_DIR.glob("*.nc")):
+        pytest.skip("Yearly environmental NetCDF datasets not present in this environment")
 
 def make_service():
     return WeatherService(

@@ -25,8 +25,12 @@ def detections():
     loop = asyncio.new_event_loop()
     try:
         items = loop.run_until_complete(fetch_detections())
-    finally:
+    except Exception:
         loop.close()
+        pytest.skip("Database not available for detections fixture")
+    finally:
+        if not loop.is_closed():
+            loop.close()
     return items
 
 def get_estimated_release_time(detection: OilSpillDetection) -> datetime:
