@@ -10,10 +10,13 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.services.drift_engine import DriftEngine
 from app.services.hindcast_service import HindcastService
 from app.services.weather_service import WeatherService
+from app.services.neon_spill_service import NeonSpillService
 from app.models.schemas import (
     SpillPredictionResponse,
     PredictedPosition,
@@ -279,12 +282,16 @@ async def hindcast_drift(
     "/diagnostic-plot/{spill_id}",
     status_code=status.HTTP_200_OK,
 )
-async def get_spill_diagnostic_plot(spill_id: str):
+async def get_spill_diagnostic_plot(
+    spill_id: str,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Retrieve the Cloudinary-hosted diagnostic SAR polygon plot
     for a given spill ID.
     """
-    plot_url = _get_diagnostic_plot_url(spill_id)
+    neon_url = await NeonSpillService.get_diagnostic_plot_url(db=db, spill_id=spill_id)
+    plot_url = neon_url or _get_diagnostic_plot_url(spill_id)
 
     if not plot_url:
         raise HTTPException(

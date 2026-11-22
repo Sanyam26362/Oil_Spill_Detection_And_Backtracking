@@ -61,7 +61,7 @@ async def inspect():
     # 3. Benchmark a sample query using bounding box + distance
     print("\n=== QUERY PERFORMANCE BENCHMARK (Testing 1 Detection Window) ===")
     t0 = time.perf_counter()
-    sample = await conn.fetchrow("""
+    await conn.fetchrow("""
         EXPLAIN ANALYZE
         SELECT COUNT(DISTINCT vessel_id)
         FROM ais_positions

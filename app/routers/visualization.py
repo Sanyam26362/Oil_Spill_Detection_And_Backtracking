@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
 from app.schemas.visualization import VisualizationResponse
 from app.services.drift_engine import DriftEngine
 from app.services.hindcast_service import HindcastService
 from app.services.visualization_service import VisualizationService
 from app.services.weather_service import WeatherService
+from app.services.neon_spill_service import NeonSpillService
 
 
 router = APIRouter()
@@ -68,8 +71,9 @@ def get_visualization_service(
     response_model=VisualizationResponse,
     status_code=status.HTTP_200_OK,
 )
-def get_spill_visualization(
+async def get_spill_visualization(
     spill_id: str,
+    db: AsyncSession = Depends(get_db),
     service: VisualizationService = Depends(
         get_visualization_service
     ),
@@ -86,6 +90,9 @@ def get_spill_visualization(
     - ocean current at detection point
     - complete backward trajectory
     """
+    neon_viz = await NeonSpillService.get_spill_visualization(db=db, spill_id=spill_id)
+    if neon_viz:
+        return neon_viz
 
     try:
         return service.get_spill_visualization(

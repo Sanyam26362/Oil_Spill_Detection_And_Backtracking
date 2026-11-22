@@ -48,8 +48,8 @@ def main() -> None:
         print("=" * 80)
 
         print(
-            f"Start position: "
-            f"33.500000, 34.000000"
+            "Start position: "
+            "33.500000, 34.000000"
         )
 
         print(

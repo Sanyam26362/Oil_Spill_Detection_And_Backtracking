@@ -149,7 +149,7 @@ async def main():
     print("\nDataset:")
     print(f"    Records: {total_rows:,}")
     print(f"    Vessels: {total_vessels:,}")
-    print(f"    Coverage: 2019-01-01 -> 2019-12-31")
+    print("    Coverage: 2019-01-01 -> 2019-12-31")
 
     # 2. Scenarios
     print("\nScenario Results:")

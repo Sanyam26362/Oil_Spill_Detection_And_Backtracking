@@ -343,7 +343,7 @@ async def ingest_file(
         stats["files_failed"] += 1
 
         print(
-            f"[FAILED] Database commit:"
+            "[FAILED] Database commit:"
         )
 
         print(

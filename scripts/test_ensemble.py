@@ -89,7 +89,7 @@ def main() -> None:
     print("=" * 80)
 
     print(
-        f"Particles requested : 100"
+        "Particles requested : 100"
     )
 
     print(

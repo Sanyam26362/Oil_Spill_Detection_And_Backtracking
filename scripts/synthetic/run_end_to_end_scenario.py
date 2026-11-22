@@ -92,13 +92,6 @@ def main() -> None:
     # 2. Generate oil observation using REAL environmental data.
     # --------------------------------------------------------------
 
-    observation_time = (
-        scenario.origin_time
-        + timedelta(
-            hours=scenario.observation_delay_hours
-        )
-    )
-
     with WeatherService(
         era5_path=ERA5_FILE,
         cmems_path=CMEMS_FILE,

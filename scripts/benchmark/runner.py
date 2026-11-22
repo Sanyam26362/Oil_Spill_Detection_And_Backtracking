@@ -245,7 +245,7 @@ async def clean_scenario(scenario_id: str) -> None:
                 )
                 AND v.vessel_id LIKE :prefix
             """),
-            {"prefix": f"SYNTH-S%"},
+            {"prefix": "SYNTH-S%"},
         )
 
         await session.commit()
@@ -277,7 +277,7 @@ async def ingest_scenario(
 
     # Validate scenario_id consistency
     if not (df["scenario_id"] == scenario_id).all():
-        raise ValueError(f"Inconsistent scenario_id in data")
+        raise ValueError("Inconsistent scenario_id in data")
 
     # Parse timestamps
     df = df.copy()

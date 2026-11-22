@@ -867,7 +867,6 @@ def generate_decoy_vessel(
     target_speed = 12.0
     slowdown = False
     loiter = False
-    early_departure = False
     fly_through = False
 
     if b_type == 0:
@@ -926,7 +925,6 @@ def generate_decoy_vessel(
         target_time = release_time - pd.Timedelta(hours=rng.uniform(1.0, 1.5))
         target_speed = rng.uniform(1.0, 2.0)
         slowdown = True
-        early_departure = True
     else:
         target_lat += rng.uniform(0.08, 0.12) * rng.choice([-1, 1])
         target_lon += rng.uniform(0.08, 0.12) * rng.choice([-1, 1])

@@ -76,7 +76,7 @@ async def test():
     if obs_time.tzinfo is None:
         obs_time = obs_time.replace(tzinfo=timezone.utc)
 
-    print(f"\n=== LIVE BACKTRACK & ATTRIBUTION TEST ===")
+    print("\n=== LIVE BACKTRACK & ATTRIBUTION TEST ===")
     print(f"Testing Spill ID:     {spill_id} (Index #{test_idx})")
     print(f"Observation Point:    ({lat:.4f}, {lon:.4f})")
     print(f"Detection Time:       {obs_time.isoformat()}")

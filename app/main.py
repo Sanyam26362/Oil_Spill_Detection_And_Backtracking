@@ -60,24 +60,36 @@ async def lifespan(app: FastAPI):
     # Initialize the in-memory catalog for the demo
     SpillCatalogService.initialize()
 
-    # D2: Create a single shared WeatherService for the application lifetime.
-    # All routers (drift, attribution, visualization) retrieve it from app.state.
-    app.state.weather_service = WeatherService(
-        weather_yearly_dir=(
-            PROJECT_ROOT / "data" / "weather" / "raw" / "yearly"
-        ),
-        ocean_yearly_dir=(
-            PROJECT_ROOT / "data" / "ocean" / "raw" / "yearly"
-        ),
-    )
+    # D2: Create a single shared WeatherService if raw datasets exist locally.
+    # When deployed to cloud (e.g. Render / Vercel), precomputed Neon data is used.
+    weather_yearly_dir = PROJECT_ROOT / "data" / "weather" / "raw" / "yearly"
+    ocean_yearly_dir = PROJECT_ROOT / "data" / "ocean" / "raw" / "yearly"
+    if weather_yearly_dir.exists() and ocean_yearly_dir.exists():
+        try:
+            app.state.weather_service = WeatherService(
+                weather_yearly_dir=weather_yearly_dir,
+                ocean_yearly_dir=ocean_yearly_dir,
+            )
+        except Exception as e:
+            logger.warning(
+                "Could not initialize WeatherService (%s). Running in precomputed Neon database mode.",
+                e,
+            )
+            app.state.weather_service = None
+    else:
+        logger.info(
+            "Raw weather/ocean directories not found. Running in precomputed Neon database mode."
+        )
+        app.state.weather_service = None
 
     yield
 
     # Close database connection pool
     await engine.dispose()
 
-    # Close the shared WeatherService (datasets + file handles).
-    app.state.weather_service.close()
+    # Close the shared WeatherService if active.
+    if getattr(app.state, "weather_service", None):
+        app.state.weather_service.close()
 
     # visualization.shutdown_weather_service() is now a no-op stub (D2).
     visualization.shutdown_weather_service()

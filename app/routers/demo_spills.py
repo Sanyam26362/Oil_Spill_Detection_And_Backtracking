@@ -43,6 +43,7 @@ from app.services.mock_vessel_service import (
     generate_valid_mmsi,
 )
 from app.services.spill_catalog_service import SpillCatalogService
+from app.services.neon_spill_service import NeonSpillService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -50,8 +51,14 @@ logger = logging.getLogger(__name__)
 
 @router.get("", response_model=DemoPaginationResponse)
 async def list_spills(
-    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
 ):
+    neon_res = await NeonSpillService.list_spills(db=db, page=page, page_size=page_size)
+    if neon_res:
+        return neon_res
+
     skip = (page - 1) * page_size
 
     spills = SpillCatalogService.get_all_spills(skip=skip, limit=page_size)
@@ -82,7 +89,14 @@ async def list_spills(
 
 
 @router.get("/{spill_id}", response_model=DemoSpillDetail)
-async def get_spill_detail(spill_id: str):
+async def get_spill_detail(
+    spill_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    neon_detail = await NeonSpillService.get_spill_detail(db=db, spill_id=spill_id)
+    if neon_detail:
+        return neon_detail
+
     s = SpillCatalogService.get_spill(spill_id)
 
     if not s:
@@ -344,6 +358,9 @@ async def get_spill_vessels(
     spill_id: str,
     db: AsyncSession = Depends(get_db),
 ):
+    neon_vessels = await NeonSpillService.get_spill_vessels(db=db, spill_id=spill_id)
+    if neon_vessels:
+        return neon_vessels
     return await _build_spill_vessels(spill_id, db=db)
 
 
@@ -366,6 +383,9 @@ async def get_spill_attribution_trajectory(
     The vessel list comes from the existing /vessels endpoint,
     so this endpoint cannot produce a different culprit list.
     """
+    neon_attrib = await NeonSpillService.get_attribution_trajectory(db=db, spill_id=spill_id)
+    if neon_attrib:
+        return neon_attrib
 
     s = SpillCatalogService.get_spill(spill_id)
 
@@ -508,6 +528,10 @@ async def backtrack_spill(
     db: AsyncSession = Depends(get_db),
     engine: AttributionEngine = Depends(get_attribution_engine),
 ):
+    neon_bt = await NeonSpillService.get_spill_backtrack(db=db, spill_id=spill_id)
+    if neon_bt:
+        return neon_bt
+
     s = SpillCatalogService.get_spill(spill_id)
 
     if not s:
@@ -637,6 +661,7 @@ async def predict_demo_spill_trajectory(
     timestep_minutes: int = Query(
         15, ge=1, le=120, description="Minutes between waypoints (default 15)"
     ),
+    db: AsyncSession = Depends(get_db),
     drift_engine: DriftEngine = Depends(get_drift_engine),
 ):
     """
@@ -645,6 +670,11 @@ async def predict_demo_spill_trajectory(
     and output the projected final position, net displacement, heading,
     and trajectory path.
     """
+    if hours == 6.0:
+        neon_fc = await NeonSpillService.get_spill_forecast(db=db, spill_id=spill_id)
+        if neon_fc:
+            return neon_fc
+
     s = SpillCatalogService.get_spill(spill_id)
 
     if not s:

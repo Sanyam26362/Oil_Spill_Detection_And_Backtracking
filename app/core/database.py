@@ -1,11 +1,28 @@
 # app/database.py
+import socket
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
+# Handle local DNS resolution quirks on Windows for Neon cloud endpoints
+_orig_getaddrinfo = socket.getaddrinfo
+def _neon_dns_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        return _orig_getaddrinfo(host, port, family, type, proto, flags)
+    except socket.gaierror:
+        if "neon.tech" in str(host):
+            return _orig_getaddrinfo("3.147.219.177", port, family, type, proto, flags)
+        raise
+
+socket.getaddrinfo = _neon_dns_getaddrinfo
+
 # Create the async engine
 # D4: pool_pre_ping validates connections; pool_recycle prevents stale connections.
 # pool_size and max_overflow are configurable via Settings.
+connect_args = {}
+if settings.NEON_URL or "neon.tech" in settings.async_database_url:
+    connect_args["ssl"] = "require"
+
 engine = create_async_engine(
     settings.async_database_url,
     echo=False,
@@ -14,6 +31,7 @@ engine = create_async_engine(
     max_overflow=settings.DB_MAX_OVERFLOW,
     pool_pre_ping=True,
     pool_recycle=1800,
+    connect_args=connect_args,
 )
 
 # Create a configured "AsyncSession" class

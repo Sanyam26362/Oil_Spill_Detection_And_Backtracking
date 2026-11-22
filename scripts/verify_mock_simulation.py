@@ -38,16 +38,12 @@ async def verify_mock_kinematics():
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Test on spill_4d67fb and spill_75bc16
         for spill_id in ["spill_4d67fb", "spill_75bc16"]:
-            print(f"\n========================================================")
+            print("\n========================================================")
             print(f"VERIFYING MOCK KINEMATICS FOR {spill_id}")
-            print(f"========================================================")
+            print("========================================================")
 
             r_spill = await client.get(f"/api/v1/demo/spills/{spill_id}")
             assert r_spill.status_code == 200
-            s_data = r_spill.json()
-
-            rel_time = datetime.fromisoformat(s_data["estimated_release_time"])
-            det_time = datetime.fromisoformat(s_data["detected_at"])
 
             r_traj = await client.get(f"/api/v1/demo/spills/{spill_id}/attribution/trajectory")
             assert r_traj.status_code == 200
@@ -73,9 +69,6 @@ async def verify_mock_kinematics():
                 assert n_pts >= 13, f"Expected at least 13 points, got {n_pts}"
 
                 # 1. Temporal Coverage & 30-min Sampling Check
-                t_first = datetime.fromisoformat(traj[0]["timestamp"].replace("Z", "+00:00"))
-                t_last = datetime.fromisoformat(traj[-1]["timestamp"].replace("Z", "+00:00"))
-
                 print(f"Start timestamp: {traj[0]['timestamp']}")
                 print(f"End timestamp:   {traj[-1]['timestamp']}")
 

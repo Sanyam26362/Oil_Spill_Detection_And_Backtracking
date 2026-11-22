@@ -131,3 +131,14 @@ data/ais/processed/benchmark_500_ml/
 tree.txt
 scripts/dev/
 
+
+# Temporary media and caches
+*.png
+*.tif
+*.gif
+.cache_sar/
+node_modules/
+data/precomputed/
+data/precomputed_ais.json
+BUG_ROOT_CAUSE_REPORT.md
+detection_diagnostic_report.csv
