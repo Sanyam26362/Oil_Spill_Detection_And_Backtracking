@@ -4,14 +4,18 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.orm import declarative_base
 from app.core.config import settings
 
-# Handle local DNS resolution quirks on Windows for Neon cloud endpoints
+# Handle IPv4 forcing and local DNS resolution for Neon cloud endpoints
 _orig_getaddrinfo = socket.getaddrinfo
 def _neon_dns_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    # Force IPv4 (AF_INET) for neon.tech to prevent IPv6 [Errno 111] Connection Refused
+    # on IPv4-only cloud container runtimes (such as Render, Fly, or Docker)
+    if "neon.tech" in str(host):
+        family = socket.AF_INET
     try:
         return _orig_getaddrinfo(host, port, family, type, proto, flags)
     except socket.gaierror:
         if "neon.tech" in str(host):
-            return _orig_getaddrinfo("3.147.219.177", port, family, type, proto, flags)
+            return _orig_getaddrinfo("3.147.219.177", port, socket.AF_INET, type, proto, flags)
         raise
 
 socket.getaddrinfo = _neon_dns_getaddrinfo

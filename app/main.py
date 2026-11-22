@@ -30,8 +30,16 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create database tables when the application starts
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database connection established successfully.")
+    except Exception as exc:
+        logger.error(
+            "Could not connect to database on startup: %s. "
+            "Please verify that NEON_URL (or DATABASE_URL) is set in your environment variables.",
+            exc,
+        )
 
     # E7: Verify required runtime data paths exist before serving traffic.
     # Log clear logger.error (do not raise) naming path and purpose.
